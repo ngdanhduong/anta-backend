@@ -125,7 +125,8 @@ public class GatewayRoutingController {
 
     private String determineTargetService(String path) {
         if (path.startsWith("/api/v1/auth") || path.startsWith("/api/v1/public/auth") ||
-            path.startsWith("/api/v1/users") || path.startsWith("/api/v1/public/config")) {
+            path.startsWith("/api/v1/users") || path.startsWith("/api/v1/public/config") ||
+            path.startsWith("/api/v1/public/content")) {
             return "AUTH-SERVICE";
         }
         if (path.startsWith("/api/v1/yards") || path.startsWith("/api/v1/public/branches") ||
