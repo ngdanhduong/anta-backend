@@ -1,0 +1,60 @@
+{
+  "name": "anta-backend",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22 <27"
+  },
+  "scripts": {
+    "setup:local": "npm run build && node dist/scripts/local-env.js",
+    "sandbox:pay": "node --env-file-if-exists=.env dist/scripts/sandbox-pay.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start:api": "node --env-file-if-exists=.env dist/apps/api/main.js",
+    "start:worker": "node --env-file-if-exists=.env dist/apps/worker/main.js",
+    "start:realtime": "node --env-file-if-exists=.env dist/apps/realtime/main.js",
+    "db:migrate": "node --env-file-if-exists=.env dist/scripts/migrate.js",
+    "db:seed": "node --env-file-if-exists=.env dist/scripts/seed.js",
+    "openapi": "node --env-file-if-exists=.env dist/scripts/openapi.js",
+    "test": "npm run build && node --test dist/tests/unit/*.test.js",
+    "test:live": "npm run build && node --env-file-if-exists=.env --test --test-concurrency=1 dist/tests/live/*.test.js",
+    "test:integration": "npm run build && node --env-file-if-exists=.env --test --test-concurrency=1 dist/tests/integration/*.test.js",
+    "db:import-venues": "node --env-file-if-exists=.env dist/scripts/import-venues.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1141.0",
+    "@aws-sdk/s3-request-presigner": "^3.1141.0",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "@nestjs/swagger": "^11.4.7",
+    "bullmq": "^5.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.0",
+    "firebase-admin": "^14.5.0",
+    "helmet": "^8.0.0",
+    "ioredis": "^5.0.0",
+    "jose": "^6.0.0",
+    "nodemailer": "^10.2.1",
+    "pg": "^8.0.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.0",
+    "sharp": "^0.35.5",
+    "socket.io": "^4.8.0"
+  },
+  "devDependencies": {
+    "@apidevtools/swagger-parser": "^13.1.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^24.0.0",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pg": "^8.0.0",
+    "socket.io-client": "^4.8.4",
+    "typescript": "^5.9.0"
+  },
+  "overrides": {
+    "js-yaml": "^5.4.2",
+    "multer": "^2.5.0",
+    "body-parser": "^2.4.0",
+    "qs": "^6.17.0"
+  }
+}

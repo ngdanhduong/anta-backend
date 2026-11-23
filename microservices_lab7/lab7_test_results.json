@@ -1,0 +1,187 @@
+{
+  "tc01": {
+    "FIELD-SERVICE": [
+      {
+        "instanceId": "field-service:8081",
+        "serviceName": "FIELD-SERVICE",
+        "host": "localhost",
+        "port": 8081,
+        "healthUrl": "http://localhost:8081/api/v1/instance-info",
+        "status": "UP",
+        "lastHeartbeat": 1795018541.205462
+      },
+      {
+        "instanceId": "field-service:8082",
+        "serviceName": "FIELD-SERVICE",
+        "host": "localhost",
+        "port": 8082,
+        "healthUrl": "http://localhost:8082/api/v1/instance-info",
+        "status": "UP",
+        "lastHeartbeat": 1795018541.213701
+      }
+    ],
+    "PAYMENT-SERVICE": [
+      {
+        "instanceId": "payment-service:8083",
+        "serviceName": "PAYMENT-SERVICE",
+        "host": "localhost",
+        "port": 8083,
+        "healthUrl": "http://localhost:8083/health",
+        "status": "UP",
+        "lastHeartbeat": 1795018541.2177227
+      }
+    ],
+    "NOTIFICATION-SERVICE": [
+      {
+        "instanceId": "notification-service:8084",
+        "serviceName": "NOTIFICATION-SERVICE",
+        "host": "localhost",
+        "port": 8084,
+        "healthUrl": "http://localhost:8084/health",
+        "status": "UP",
+        "lastHeartbeat": 1795018541.2216465
+      }
+    ]
+  },
+  "tc02": {
+    "bookingId": "BK-DISC-9E0DAA63",
+    "customerId": "cust-889",
+    "fieldId": "f-101",
+    "fieldName": "Sân bóng đá cỏ nhân tạo 7 người - Sân A",
+    "pricePerHour": 350000.0,
+    "status": "CONFIRMED",
+    "handledByInstance": "field-service:8081",
+    "createdAt": "2026-11-18T23:15:41.230371"
+  },
+  "tc03": {
+    "stats": {
+      "field-service:8081": 10,
+      "field-service:8082": 10
+    },
+    "history": [
+      [
+        1,
+        "field-service:8082",
+        "Thành công (201 Created)"
+      ],
+      [
+        2,
+        "field-service:8081",
+        "Thành công (201 Created)"
+      ],
+      [
+        3,
+        "field-service:8082",
+        "Thành công (201 Created)"
+      ],
+      [
+        4,
+        "field-service:8081",
+        "Thành công (201 Created)"
+      ],
+      [
+        5,
+        "field-service:8082",
+        "Thành công (201 Created)"
+      ],
+      [
+        6,
+        "field-service:8081",
+        "Thành công (201 Created)"
+      ],
+      [
+        7,
+        "field-service:8082",
+        "Thành công (201 Created)"
+      ],
+      [
+        8,
+        "field-service:8081",
+        "Thành công (201 Created)"
+      ],
+      [
+        9,
+        "field-service:8082",
+        "Thành công (201 Created)"
+      ],
+      [
+        10,
+        "field-service:8081",
+        "Thành công (201 Created)"
+      ],
+      [
+        11,
+        "field-service:8082",
+        "Thành công (201 Created)"
+      ],
+      [
+        12,
+        "field-service:8081",
+        "Thành công (201 Created)"
+      ],
+      [
+        13,
+        "field-service:8082",
+        "Thành công (201 Created)"
+      ],
+      [
+        14,
+        "field-service:8081",
+        "Thành công (201 Created)"
+      ],
+      [
+        15,
+        "field-service:8082",
+        "Thành công (201 Created)"
+      ],
+      [
+        16,
+        "field-service:8081",
+        "Thành công (201 Created)"
+      ],
+      [
+        17,
+        "field-service:8082",
+        "Thành công (201 Created)"
+      ],
+      [
+        18,
+        "field-service:8081",
+        "Thành công (201 Created)"
+      ],
+      [
+        19,
+        "field-service:8082",
+        "Thành công (201 Created)"
+      ],
+      [
+        20,
+        "field-service:8081",
+        "Thành công (201 Created)"
+      ]
+    ]
+  },
+  "tc04": {
+    "bookingId": "BK-DISC-CB81BA29",
+    "customerId": "cust-889",
+    "fieldId": "f-101",
+    "fieldName": "Sân bóng đá cỏ nhân tạo",
+    "pricePerHour": 350000.0,
+    "status": "CONFIRMED",
+    "handledByInstance": "field-service:8082",
+    "createdAt": "2026-11-18T23:15:41.320689"
+  },
+  "tc05": {
+    "detail": "Tất cả các instance của [FIELD-SERVICE] đều đang ngoại tuyến!"
+  },
+  "tc06": {
+    "bookingId": "BK-DISC-11531C1F",
+    "customerId": "cust-889",
+    "fieldId": "f-101",
+    "fieldName": "Sân bóng đá cỏ nhân tạo",
+    "pricePerHour": 350000.0,
+    "status": "CONFIRMED",
+    "handledByInstance": "field-service:8082",
+    "createdAt": "2026-11-18T23:15:41.335271"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "tc1": {
+    "status": 200,
+    "body": {
+      "id": "f-101",
+      "name": "Sân bóng đá cỏ nhân tạo 7 người - Sân A",
+      "sportType": "FOOTBALL",
+      "pricePerHour": 350000.0,
+      "status": "AVAILABLE"
+    }
+  },
+  "tc2": {
+    "status": 404,
+    "body": {
+      "detail": "Sân thể thao với mã 'f-999' không tồn tại trong hệ thống!"
+    }
+  },
+  "tc3": {
+    "status": 201,
+    "body": {
+      "bookingId": "BK-202611-A317",
+      "customerId": "cust-889",
+      "fieldId": "f-101",
+      "fieldName": "Sân bóng đá cỏ nhân tạo 7 người - Sân A",
+      "totalAmount": 700000.0,
+      "status": "CONFIRMED",
+      "createdAt": "2026-11-18T20:30:06.431465"
+    }
+  },
+  "tc4": {
+    "status": 404,
+    "body": {
+      "detail": "Sân thể thao mã 'f-999' không tồn tại. Hủy tạo lịch đặt sân!"
+    }
+  },
+  "tc5": {
+    "status": 503,
+    "body": {
+      "detail": "Hệ thống quản lý sân thể thao hiện đang bảo trì hoặc mất kết nối (Connection refused)!"
+    }
+  },
+  "tc6": {
+    "status": 504,
+    "body": {
+      "detail": "Field Service phản hồi vượt quá 3.0 giây. Hệ thống tự động ngắt kết nối (504 Gateway Timeout)!"
+    }
+  }
+}

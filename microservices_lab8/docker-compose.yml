@@ -1,0 +1,149 @@
+# ========================================================
+# Docker Compose Orchestration - Microservices Lab 8
+# Hệ thống Đặt sân thể thao Alobo Court Microservices Platform
+# ========================================================
+name: alobo-court-microservices
+
+services:
+  # ----------------------------------------------------
+  # 1. Cơ sở dữ liệu chính: PostgreSQL + PostGIS (Bảo toàn dữ liệu qua Volume)
+  # ----------------------------------------------------
+  postgres:
+    image: postgis/postgis:16-3.5
+    container_name: alobo-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-anta}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-anta_local}
+      POSTGRES_DB: ${DB_NAME:-anta}
+    ports:
+      - "127.0.0.1:55432:5432"
+    restart: unless-stopped
+    volumes:
+      - alobo-postgres-data:/var/lib/postgresql/data
+    networks:
+      - alobo-internal-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-anta} -d ${DB_NAME:-anta}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # ----------------------------------------------------
+  # 2. Redis: Khóa vị trí sân (Slot Lock) & Cache
+  # ----------------------------------------------------
+  redis:
+    image: redis:7.4-alpine
+    container_name: alobo-redis
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "127.0.0.1:56379:6379"
+    restart: unless-stopped
+    volumes:
+      - alobo-redis-data:/data
+    networks:
+      - alobo-internal-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # ----------------------------------------------------
+  # 3. Message Broker: RabbitMQ (Event-Driven cho Thông báo)
+  # ----------------------------------------------------
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: alobo-rabbitmq
+    ports:
+      - "127.0.0.1:5672:5672"     # AMQP Protocol
+      - "127.0.0.1:15672:15672"   # Management Dashboard UI
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    volumes:
+      - alobo-rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - alobo-internal-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ----------------------------------------------------
+  # 4. Field Service (Provider) - Quản lý sân bãi & Catalog
+  # ----------------------------------------------------
+  field-service:
+    build:
+      context: ..
+      dockerfile: microservices_lab8/Dockerfile.field
+    image: alobo/field-service:1.0.0
+    container_name: alobo-field-service
+    ports:
+      - "8081:8081"
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-anta}:${DB_PASSWORD:-anta_local}@postgres:5432/${DB_NAME:-anta}
+      PORT: 8081
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - alobo-internal-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/api/fields/f-101')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ----------------------------------------------------
+  # 5. Booking Service (Consumer) - Quản lý đơn đặt lịch sân
+  # ----------------------------------------------------
+  booking-service:
+    build:
+      context: ..
+      dockerfile: microservices_lab8/Dockerfile.booking
+    image: alobo/booking-service:1.0.0
+    container_name: alobo-booking-service
+    ports:
+      - "8080:8080"
+    environment:
+      # Giao tiếp qua tên service trong Docker Network thay vì localhost
+      FIELD_SERVICE_URL: http://field-service:8081
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      REDIS_URL: redis://redis:6379
+      CONNECT_TIMEOUT: 2.0
+      READ_TIMEOUT: 3.0
+      MAX_RETRIES: 3
+    depends_on:
+      field-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - alobo-internal-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/docs')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+# ----------------------------------------------------
+# Quản lý Docker Networks & Persistent Named Volumes
+# ----------------------------------------------------
+networks:
+  alobo-internal-net:
+    driver: bridge
+    name: alobo-court-network
+
+volumes:
+  alobo-postgres-data:
+    name: alobo_postgres_persistent_volume
+  alobo-redis-data:
+    name: alobo_redis_persistent_volume
+  alobo-rabbitmq-data:
+    name: alobo_rabbitmq_persistent_volume

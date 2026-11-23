@@ -1,0 +1,43 @@
+# ========================================================
+# Dockerfile cho Booking Service (Consumer) - Alobo Platform
+# Tối ưu Multi-Stage Build & Chạy Non-root User bảo mật
+# ========================================================
+
+# Stage 1: Build & Dependencies
+FROM python:3.12-slim AS builder
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY python_backend/requirements.txt requirements.txt
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Stage 2: Runtime Minimal Image
+FROM python:3.12-slim AS runner
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH=/home/appuser/.local/bin:$PATH \
+    PYTHONPATH=/app
+
+RUN groupadd -g 65532 appgroup && \
+    useradd -u 65532 -g appgroup -m appuser
+
+COPY --from=builder --chown=appuser:appgroup /root/.local /home/appuser/.local
+COPY --chown=appuser:appgroup microservices_lab2/booking_service.py /app/booking_service.py
+COPY --chown=appuser:appgroup microservices_lab2/config.py /app/config.py
+
+USER appuser:appgroup
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/docs')" || exit 1
+
+ENTRYPOINT ["uvicorn", "booking_service:app", "--host", "0.0.0.0", "--port", "8080"]

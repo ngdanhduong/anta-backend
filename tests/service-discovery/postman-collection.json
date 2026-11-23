@@ -1,0 +1,117 @@
+{
+  "info": {
+    "name": "Anta Microservices Service Discovery Collection",
+    "description": "Bộ kiểm thử Service Discovery và Load Balancing cho Bài thực hành số 7",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "01. Eureka Dashboard Status",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Accept", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "http://localhost:8761/eureka/apps",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8761",
+          "path": ["eureka", "apps"]
+        }
+      }
+    },
+    {
+      "name": "02. Yard Service Instance 1 Info",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://localhost:8081/api/v1/instance-info",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8081",
+          "path": ["api", "v1", "instance-info"]
+        }
+      }
+    },
+    {
+      "name": "03. Yard Service Instance 2 Info",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://localhost:8082/api/v1/instance-info",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8082",
+          "path": ["api", "v1", "instance-info"]
+        }
+      }
+    },
+    {
+      "name": "04. Booking Service Test Load Balancing",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://localhost:8083/api/v1/bookings/test-load-balancing",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8083",
+          "path": ["api", "v1", "bookings", "test-load-balancing"]
+        }
+      }
+    },
+    {
+      "name": "05. Booking Service Get Yards via Discovery",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://localhost:8083/api/v1/bookings/yards",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8083",
+          "path": ["api", "v1", "bookings", "yards"]
+        }
+      }
+    },
+    {
+      "name": "06. Create Booking via Service Discovery",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"yardId\": \"yard-01\",\n  \"userId\": \"customer-anta-01\",\n  \"slot\": \"18:00-19:00\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8083/api/v1/bookings",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8083",
+          "path": ["api", "v1", "bookings"]
+        }
+      }
+    },
+    {
+      "name": "07. Payment Service Create Intent",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"bookingId\": \"ANTA-BK-1001\",\n  \"amount\": 120000\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8084/api/v1/payments/intents",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8084",
+          "path": ["api", "v1", "payments", "intents"]
+        }
+      }
+    }
+  ]
+}

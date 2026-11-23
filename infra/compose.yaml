@@ -1,0 +1,113 @@
+name: anta-backend
+x-backend: &backend
+  image: anta-backend:local
+  build:
+    context: ..
+    dockerfile: infra/Dockerfile
+  env_file: ../.env
+  environment:
+    NODE_ENV: development
+    BIND_HOST: 0.0.0.0
+    DATABASE_URL: postgresql://anta:anta_local@postgres:5432/anta
+    REDIS_URL: redis://redis:6379
+    # The FCM service-account file stays on the host in ../secrets, which Git and the image build both leave out.
+    GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/anta/firebase-service-account.json
+  profiles: ["app"]
+  restart: unless-stopped
+services:
+  postgres:
+    image: postgis/postgis:16-3.5
+    environment:
+      POSTGRES_USER: anta
+      POSTGRES_PASSWORD: anta_local
+      POSTGRES_DB: anta
+    ports: ["127.0.0.1:55432:5432"]
+    restart: unless-stopped
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U anta -d anta"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports: ["127.0.0.1:56379:6379"]
+    restart: unless-stopped
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  migrate:
+    <<: *backend
+    command: ["node", "dist/scripts/migrate.js"]
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+  api:
+    <<: *backend
+    command: ["node", "dist/apps/api/main.js"]
+    ports: ["127.0.0.1:3000:3000"]
+    volumes: ["../secrets:/run/secrets/anta:ro"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/v1/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  worker:
+    <<: *backend
+    command: ["node", "dist/apps/worker/main.js"]
+    volumes: ["../secrets:/run/secrets/anta:ro"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+  realtime:
+    <<: *backend
+    command: ["node", "dist/apps/realtime/main.js"]
+    ports: ["127.0.0.1:3001:3001"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+  migrate-python:
+    image: anta-backend-fastapi:local
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.fastapi
+    env_file: ../.env
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://anta:anta_local@postgres:5432/anta
+      REDIS_URL: redis://redis:6379
+    command: ["python", "-m", "anta_api.migrate"]
+    profiles: ["python"]
+    depends_on:
+      postgres: { condition: service_healthy }
+  api-python:
+    image: anta-backend-fastapi:local
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.fastapi
+    env_file: ../.env
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://anta:anta_local@postgres:5432/anta
+      REDIS_URL: redis://redis:6379
+    ports: ["127.0.0.1:8000:8000"]
+    profiles: ["python"]
+    restart: unless-stopped
+    depends_on:
+      migrate-python: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+volumes:
+  postgres-data:
+  redis-data:

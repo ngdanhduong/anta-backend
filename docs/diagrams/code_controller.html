@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: transparent;
+    padding: 10px;
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    display: inline-block;
+  }
+  .vscode-window {
+    width: 960px;
+    background: #1e1e1e;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.1);
+    border: 1px solid #333333;
+  }
+  /* Titlebar */
+  .titlebar {
+    height: 36px;
+    background: #181818;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    border-bottom: 1px solid #252525;
+    user-select: none;
+  }
+  .titlebar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .window-dots {
+    display: flex;
+    gap: 6px;
+  }
+  .dot {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+  }
+  .dot-close { background: #ff5f56; }
+  .dot-min { background: #ffbd2e; }
+  .dot-max { background: #27c93f; }
+  .title-text {
+    color: #cccccc;
+    font-size: 12px;
+    font-weight: 500;
+    margin-left: 10px;
+  }
+  /* Tabs */
+  .tabs-bar {
+    height: 35px;
+    background: #181818;
+    display: flex;
+    align-items: flex-end;
+    border-bottom: 1px solid #1e1e1e;
+  }
+  .tab {
+    height: 35px;
+    background: #1e1e1e;
+    color: #ffffff;
+    font-size: 12.5px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 8px;
+    border-top: 2px solid #007acc;
+    border-right: 1px solid #252525;
+  }
+  .tab-icon {
+    font-weight: 800;
+    font-size: 10px;
+    color: #3178c6;
+    background: rgba(49, 120, 198, 0.15);
+    padding: 2px 4px;
+    border-radius: 3px;
+  }
+  .tab-py {
+    color: #ffd43b;
+    background: rgba(255, 212, 59, 0.15);
+  }
+  .tab-inactive {
+    height: 33px;
+    background: #141414;
+    color: #888888;
+    border-top: 2px solid transparent;
+  }
+  /* Breadcrumbs */
+  .breadcrumbs {
+    height: 24px;
+    background: #1e1e1e;
+    color: #8c8c8c;
+    font-size: 11.5px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    border-bottom: 1px solid #252525;
+    gap: 6px;
+  }
+  .crumb-sep { color: #555555; }
+  .crumb-active { color: #cccccc; }
+  /* Editor */
+  .editor {
+    display: flex;
+    background: #1e1e1e;
+    padding: 12px 0;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .gutter {
+    width: 48px;
+    text-align: right;
+    padding-right: 14px;
+    color: #858585;
+    user-select: none;
+    border-right: 1px solid #2d2d2d;
+  }
+  .gutter div { height: 20.15px; }
+  .code {
+    padding-left: 16px;
+    flex: 1;
+    overflow: hidden;
+    color: #d4d4d4;
+  }
+  .code div { height: 20.15px; white-space: pre; }
+  /* Statusbar */
+  .statusbar {
+    height: 24px;
+    background: #007acc;
+    color: #ffffff;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+  }
+  .status-left, .status-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  /* Syntax Highlighting */
+  .kw { color: #569cd6; font-weight: 600; }
+  .kw-ctrl { color: #c586c0; font-weight: 600; }
+  .dec { color: #dcdcaa; }
+  .type { color: #4ec9b0; }
+  .fn { color: #dcdcaa; }
+  .str { color: #ce9178; }
+  .num { color: #b5cea8; }
+  .cm { color: #6a9955; font-style: italic; }
+  .prop { color: #9cdcfe; }
+  .tag { color: #569cd6; }
+</style>
+</head>
+<body>
+<div class="vscode-window">
+  <div class="titlebar">
+    <div class="titlebar-left">
+      <div class="window-dots">
+        <div class="dot dot-close"></div>
+        <div class="dot dot-min"></div>
+        <div class="dot dot-max"></div>
+      </div>
+      <div class="title-text">controller.ts - anta-backend - Visual Studio Code</div>
+    </div>
+    <div style="color: #666; font-size: 11px;">Visual Studio Code — Anta Backend</div>
+  </div>
+  <div class="tabs-bar">
+    <div class="tab">
+      <span class="tab-icon ">TS</span>
+      <span>controller.ts</span>
+    </div>
+    <div class="tab tab-inactive">
+      <span style="font-size: 11px; color: #555;">service.ts</span>
+    </div>
+    <div class="tab tab-inactive">
+      <span style="font-size: 11px; color: #555;">dto.ts</span>
+    </div>
+  </div>
+  <div class="breadcrumbs">
+    <span>anta-backend</span>
+    <span class="crumb-sep">&gt;</span>
+    <span>modules > booking</span>
+    <span class="crumb-sep">&gt;</span>
+    <span class="crumb-active">controller.ts</span>
+    <span class="crumb-sep">&gt;</span>
+    <span class="crumb-active">BookingController > create</span>
+  </div>
+  <div class="editor">
+    <div class="gutter">
+      <div>7</div>
+<div>8</div>
+<div>9</div>
+<div>10</div>
+<div>11</div>
+<div>12</div>
+<div>13</div>
+<div>14</div>
+<div>15</div>
+<div>16</div>
+<div>17</div>
+<div>18</div>
+<div>19</div>
+<div>20</div>
+<div>21</div>
+<div>22</div>
+<div>23</div>
+<div>24</div>
+<div>25</div>
+    </div>
+    <div class="code">
+      <div><span class="kw">const</span> <span class="prop">keyHeader</span> = { <span class="prop">name</span>: <span class="str">'Idempotency-Key'</span>, <span class="prop">required</span>: <span class="kw">true</span>, <span class="prop">description</span>: <span class="str">'8-128 chars'</span> };</div>
+<div></div>
+<div><span class="dec">@ApiTags</span>(<span class="str">'booking'</span>) <span class="dec">@Controller</span>()</div>
+<div><span class="kw">export class</span> <span class="type">BookingController</span> {</div>
+<div>  <span class="kw">constructor</span>(<span class="kw">private readonly</span> <span class="prop">booking</span>: <span class="type">BookingService</span>) {}</div>
+<div></div>
+<div>  <span class="cm">// 1. Khách hàng gửi yêu cầu giữ chỗ có thời hạn 5 phút</span></div>
+<div>  <span class="dec">@ApiBearerAuth</span>() <span class="dec">@Post</span>(<span class="str">'booking-holds'</span>) <span class="dec">@ApiHeader</span>(<span class="prop">keyHeader</span>)</div>
+<div>  <span class="fn">hold</span>(<span class="dec">@CurrentUser</span>() <span class="prop">user</span>: <span class="type">Principal</span>, <span class="dec">@Body</span>() <span class="prop">dto</span>: <span class="type">SlotDto</span>, <span class="dec">@Headers</span>(<span class="str">'idempotency-key'</span>) <span class="prop">key</span>?: <span class="type">string</span>) {</div>
+<div>    <span class="kw-ctrl">return</span> <span class="kw">this</span>.<span class="prop">booking</span>.<span class="fn">hold</span>(<span class="prop">user</span>.<span class="prop">userId</span>, <span class="prop">dto</span>, <span class="prop">key</span>);</div>
+<div>  }</div>
+<div></div>
+<div>  <span class="cm">// 2. Chuyển đổi Hold thành Đơn đặt sân chính thức</span></div>
+<div>  <span class="dec">@ApiBearerAuth</span>() <span class="dec">@Post</span>(<span class="str">'bookings'</span>) <span class="dec">@ApiHeader</span>(<span class="prop">keyHeader</span>)</div>
+<div>  <span class="fn">create</span>(<span class="dec">@CurrentUser</span>() <span class="prop">user</span>: <span class="type">Principal</span>, <span class="dec">@Body</span>() <span class="prop">dto</span>: <span class="type">BookingDto</span>,</div>
+<div>         <span class="dec">@Req</span>() <span class="prop">req</span>: <span class="type">AuthRequest</span>, <span class="dec">@Headers</span>(<span class="str">'idempotency-key'</span>) <span class="prop">key</span>?: <span class="type">string</span>) {</div>
+<div>    <span class="kw-ctrl">return</span> <span class="kw">this</span>.<span class="prop">booking</span>.<span class="fn">create</span>(<span class="prop">user</span>.<span class="prop">userId</span>, <span class="prop">dto</span>.<span class="prop">holdId</span>, <span class="prop">key</span>, <span class="prop">req</span>.<span class="prop">requestId</span>);</div>
+<div>  }</div>
+<div>}</div>
+    </div>
+  </div>
+  <div class="statusbar">
+    <div class="status-left">
+      <span>&#x2942; main*</span>
+      <span>&#x2713; 0 &#x26A0; 0</span>
+    </div>
+    <div class="status-right">
+      <span>Ln 12, Col 1</span>
+      <span>Spaces: 2</span>
+      <span>UTF-8</span>
+      <span>TypeScript</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

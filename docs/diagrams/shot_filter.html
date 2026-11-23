@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0b1120;
+    padding: 16px;
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    display: inline-block;
+  }
+  .vscode-window {
+    width: 920px;
+    background: #1e1e1e;
+    border-radius: 9px;
+    overflow: hidden;
+    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.12);
+    border: 1px solid #333333;
+  }
+  /* Titlebar */
+  .titlebar {
+    height: 36px;
+    background: #181818;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    border-bottom: 1px solid #252525;
+    user-select: none;
+  }
+  .titlebar-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .window-dots {
+    display: flex;
+    gap: 7px;
+  }
+  .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+  .dot-close { background: #ff5f56; }
+  .dot-min { background: #ffbd2e; }
+  .dot-max { background: #27c93f; }
+  .title-text {
+    color: #cccccc;
+    font-size: 12.5px;
+    font-weight: 500;
+    margin-left: 10px;
+    letter-spacing: 0.2px;
+  }
+  /* Tabs */
+  .tabs-bar {
+    height: 36px;
+    background: #141414;
+    display: flex;
+    align-items: flex-end;
+    border-bottom: 1px solid #1e1e1e;
+  }
+  .tab {
+    height: 36px;
+    background: #1e1e1e;
+    color: #ffffff;
+    font-size: 12.5px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 8px;
+    border-top: 2px solid #007acc;
+    border-right: 1px solid #252525;
+  }
+  .tab-icon {
+    font-weight: 800;
+    font-size: 10px;
+    color: #3178c6;
+    background: rgba(49, 120, 198, 0.18);
+    padding: 2px 4px;
+    border-radius: 3px;
+  }
+  .tab-py {
+    color: #ffd43b;
+    background: rgba(255, 212, 59, 0.18);
+  }
+  .tab-inactive {
+    height: 33px;
+    background: #181818;
+    color: #888888;
+    border-top: 2px solid transparent;
+  }
+  /* Breadcrumbs */
+  .breadcrumbs {
+    height: 25px;
+    background: #1e1e1e;
+    color: #8c8c8c;
+    font-size: 11.5px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    border-bottom: 1px solid #252525;
+    gap: 6px;
+  }
+  .crumb-sep { color: #555555; }
+  .crumb-active { color: #cccccc; font-weight: 500; }
+  /* Editor */
+  .editor {
+    display: flex;
+    background: #1e1e1e;
+    padding: 14px 0;
+    font-family: 'Consolas', 'Fira Code', 'Courier New', monospace;
+    font-size: 12.8px;
+    line-height: 1.55;
+  }
+  .gutter {
+    width: 48px;
+    text-align: right;
+    padding-right: 14px;
+    color: #6e7681;
+    user-select: none;
+    border-right: 1px solid #2d2d2d;
+  }
+  .gutter div { height: 20px; }
+  .code {
+    padding-left: 16px;
+    padding-right: 20px;
+    flex: 1;
+    overflow: hidden;
+    color: #d4d4d4;
+  }
+  .code div { height: 20px; white-space: pre; }
+  /* Statusbar */
+  .statusbar {
+    height: 24px;
+    background: #007acc;
+    color: #ffffff;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    font-weight: 500;
+  }
+  .status-left, .status-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  /* Syntax Highlighting */
+  .kw { color: #569cd6; font-weight: 600; }
+  .kw-ctrl { color: #c586c0; font-weight: 600; }
+  .dec { color: #dcdcaa; }
+  .type { color: #4ec9b0; }
+  .fn { color: #dcdcaa; }
+  .str { color: #ce9178; }
+  .num { color: #b5cea8; }
+  .cm { color: #6a9955; font-style: italic; }
+  .prop { color: #9cdcfe; }
+</style>
+</head>
+<body>
+<div class="vscode-window">
+  <div class="titlebar">
+    <div class="titlebar-left">
+      <div class="window-dots">
+        <div class="dot dot-close"></div>
+        <div class="dot dot-min"></div>
+        <div class="dot dot-max"></div>
+      </div>
+      <div class="title-text">http.ts - packages/observability - Anta Backend</div>
+    </div>
+    <div style="color: #888888; font-size: 11px;">Visual Studio Code — Anta Backend Project</div>
+  </div>
+  <div class="tabs-bar">
+    <div class="tab">
+      <span class="tab-icon ">TS</span>
+      <span>http.ts</span>
+    </div>
+    <div class="tab tab-inactive">
+      <span style="font-size: 11px; color: #666;">service.ts</span>
+    </div>
+    <div class="tab tab-inactive">
+      <span style="font-size: 11px; color: #666;">dto.ts</span>
+    </div>
+  </div>
+  <div class="breadcrumbs">
+    <span>anta-backend</span>
+    <span class="crumb-sep">&gt;</span>
+    <span>packages > observability</span>
+    <span class="crumb-sep">&gt;</span>
+    <span class="crumb-active">http.ts</span>
+    <span class="crumb-sep">&gt;</span>
+    <span class="crumb-active">ApiExceptionFilter > catch</span>
+  </div>
+  <div class="editor">
+    <div class="gutter">
+      <div>26</div>
+<div>27</div>
+<div>28</div>
+<div>29</div>
+<div>30</div>
+<div>31</div>
+<div>32</div>
+<div>33</div>
+<div>34</div>
+<div>35</div>
+<div>36</div>
+<div>37</div>
+<div>38</div>
+<div>39</div>
+<div>40</div>
+<div>41</div>
+<div>42</div>
+    </div>
+    <div class="code">
+      <div><span class="dec">@Catch</span>()</div>
+<div><span class="kw">export class</span> <span class="type">ApiExceptionFilter</span> <span class="kw">implements</span> <span class="type">ExceptionFilter</span> {</div>
+<div>  <span class="fn">catch</span>(<span class="prop">exception</span>: <span class="type">unknown</span>, <span class="prop">host</span>: <span class="type">ArgumentsHost</span>) {</div>
+<div>    <span class="kw">const</span> <span class="prop">req</span> = <span class="prop">host</span>.<span class="fn">switchToHttp</span>().<span class="fn">getRequest</span>&lt;<span class="type">AuthRequest</span>&gt;();</div>
+<div>    <span class="kw">const</span> <span class="prop">res</span> = <span class="prop">host</span>.<span class="fn">switchToHttp</span>().<span class="fn">getResponse</span>&lt;<span class="type">Response</span>&gt;();</div>
+<div>    <span class="kw">const</span> <span class="prop">pgCode</span> = (<span class="prop">exception</span> <span class="kw">as</span> { <span class="prop">code</span>?: <span class="type">string</span> })?.<span class="prop">code</span>;</div>
+<div></div>
+<div>    <span class="kw">let</span> <span class="prop">status</span> = <span class="prop">exception</span> <span class="kw">instanceof</span> <span class="type">HttpException</span> ? <span class="prop">exception</span>.<span class="fn">getStatus</span>() : <span class="num">500</span>;</div>
+<div>    <span class="kw">let</span> <span class="prop">code</span> = <span class="prop">exception</span> <span class="kw">instanceof</span> <span class="type">ApiError</span> ? <span class="prop">exception</span>.<span class="prop">code</span> : <span class="prop">status</span> === <span class="num">404</span> ? <span class="str">'NOT_FOUND'</span> : <span class="str">'INTERNAL_ERROR'</span>;</div>
+<div></div>
+<div>    <span class="cm">// BẮT LỖI XUNG ĐỘT KHUNG GIỜ POSTGRES GIST CONSTRAINT (23P01) -> 409 CONFLICT</span></div>
+<div>    <span class="kw-ctrl">if</span> (<span class="prop">pgCode</span> === <span class="str">'23P01'</span>) {</div>
+<div>      <span class="prop">status</span> = <span class="num">409</span>; <span class="prop">code</span> = <span class="str">'SLOT_UNAVAILABLE'</span>; <span class="prop">message</span> = <span class="str">'The selected slot is no longer available'</span>;</div>
+<div>    }</div>
+<div>    <span class="prop">res</span>.<span class="fn">status</span>(<span class="prop">status</span>).<span class="fn">json</span>({ <span class="prop">data</span>: <span class="kw">null</span>, <span class="prop">meta</span>: { <span class="prop">requestId</span>: <span class="prop">req</span>.<span class="prop">requestId</span> }, <span class="prop">error</span>: { <span class="prop">code</span>, <span class="prop">message</span> } });</div>
+<div>  }</div>
+<div>}</div>
+    </div>
+  </div>
+  <div class="statusbar">
+    <div class="status-left">
+      <span>&#x2942; main*</span>
+      <span>&#x2713; 0 &#x26A0; 0</span>
+    </div>
+    <div class="status-right">
+      <span>Ln 30, Col 1</span>
+      <span>Spaces: 2</span>
+      <span>UTF-8</span>
+      <span>TypeScript</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

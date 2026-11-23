@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0b1120;
+    padding: 16px;
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    display: inline-block;
+  }
+  .vscode-window {
+    width: 920px;
+    background: #1e1e1e;
+    border-radius: 9px;
+    overflow: hidden;
+    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.12);
+    border: 1px solid #333333;
+  }
+  /* Titlebar */
+  .titlebar {
+    height: 36px;
+    background: #181818;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    border-bottom: 1px solid #252525;
+    user-select: none;
+  }
+  .titlebar-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .window-dots {
+    display: flex;
+    gap: 7px;
+  }
+  .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+  .dot-close { background: #ff5f56; }
+  .dot-min { background: #ffbd2e; }
+  .dot-max { background: #27c93f; }
+  .title-text {
+    color: #cccccc;
+    font-size: 12.5px;
+    font-weight: 500;
+    margin-left: 10px;
+    letter-spacing: 0.2px;
+  }
+  /* Tabs */
+  .tabs-bar {
+    height: 36px;
+    background: #141414;
+    display: flex;
+    align-items: flex-end;
+    border-bottom: 1px solid #1e1e1e;
+  }
+  .tab {
+    height: 36px;
+    background: #1e1e1e;
+    color: #ffffff;
+    font-size: 12.5px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 8px;
+    border-top: 2px solid #007acc;
+    border-right: 1px solid #252525;
+  }
+  .tab-icon {
+    font-weight: 800;
+    font-size: 10px;
+    color: #3178c6;
+    background: rgba(49, 120, 198, 0.18);
+    padding: 2px 4px;
+    border-radius: 3px;
+  }
+  .tab-py {
+    color: #ffd43b;
+    background: rgba(255, 212, 59, 0.18);
+  }
+  .tab-inactive {
+    height: 33px;
+    background: #181818;
+    color: #888888;
+    border-top: 2px solid transparent;
+  }
+  /* Breadcrumbs */
+  .breadcrumbs {
+    height: 25px;
+    background: #1e1e1e;
+    color: #8c8c8c;
+    font-size: 11.5px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    border-bottom: 1px solid #252525;
+    gap: 6px;
+  }
+  .crumb-sep { color: #555555; }
+  .crumb-active { color: #cccccc; font-weight: 500; }
+  /* Editor */
+  .editor {
+    display: flex;
+    background: #1e1e1e;
+    padding: 14px 0;
+    font-family: 'Consolas', 'Fira Code', 'Courier New', monospace;
+    font-size: 12.8px;
+    line-height: 1.55;
+  }
+  .gutter {
+    width: 48px;
+    text-align: right;
+    padding-right: 14px;
+    color: #6e7681;
+    user-select: none;
+    border-right: 1px solid #2d2d2d;
+  }
+  .gutter div { height: 20px; }
+  .code {
+    padding-left: 16px;
+    padding-right: 20px;
+    flex: 1;
+    overflow: hidden;
+    color: #d4d4d4;
+  }
+  .code div { height: 20px; white-space: pre; }
+  /* Statusbar */
+  .statusbar {
+    height: 24px;
+    background: #007acc;
+    color: #ffffff;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    font-weight: 500;
+  }
+  .status-left, .status-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  /* Syntax Highlighting */
+  .kw { color: #569cd6; font-weight: 600; }
+  .kw-ctrl { color: #c586c0; font-weight: 600; }
+  .dec { color: #dcdcaa; }
+  .type { color: #4ec9b0; }
+  .fn { color: #dcdcaa; }
+  .str { color: #ce9178; }
+  .num { color: #b5cea8; }
+  .cm { color: #6a9955; font-style: italic; }
+  .prop { color: #9cdcfe; }
+</style>
+</head>
+<body>
+<div class="vscode-window">
+  <div class="titlebar">
+    <div class="titlebar-left">
+      <div class="window-dots">
+        <div class="dot dot-close"></div>
+        <div class="dot dot-min"></div>
+        <div class="dot dot-max"></div>
+      </div>
+      <div class="title-text">access.ts - packages - Anta Backend</div>
+    </div>
+    <div style="color: #888888; font-size: 11px;">Visual Studio Code — Anta Backend Project</div>
+  </div>
+  <div class="tabs-bar">
+    <div class="tab">
+      <span class="tab-icon ">TS</span>
+      <span>access.ts</span>
+    </div>
+    <div class="tab tab-inactive">
+      <span style="font-size: 11px; color: #666;">service.ts</span>
+    </div>
+    <div class="tab tab-inactive">
+      <span style="font-size: 11px; color: #666;">dto.ts</span>
+    </div>
+  </div>
+  <div class="breadcrumbs">
+    <span>anta-backend</span>
+    <span class="crumb-sep">&gt;</span>
+    <span>packages</span>
+    <span class="crumb-sep">&gt;</span>
+    <span class="crumb-active">access.ts</span>
+    <span class="crumb-sep">&gt;</span>
+    <span class="crumb-active">AccessService</span>
+  </div>
+  <div class="editor">
+    <div class="gutter">
+      <div>5</div>
+<div>6</div>
+<div>7</div>
+<div>8</div>
+<div>9</div>
+<div>10</div>
+<div>11</div>
+<div>12</div>
+<div>13</div>
+<div>14</div>
+<div>15</div>
+<div>16</div>
+<div>17</div>
+<div>18</div>
+<div>19</div>
+    </div>
+    <div class="code">
+      <div><span class="dec">@Injectable</span>()</div>
+<div><span class="kw">export class</span> <span class="type">AccessService</span> {</div>
+<div>  <span class="kw">constructor</span>(<span class="kw">private readonly</span> <span class="prop">db</span>: <span class="type">Database</span>) {}</div>
+<div>  <span class="cm">// Kiểm tra quyền Chủ chi nhánh sân (branch_owner)</span></div>
+<div>  <span class="kw">async</span> <span class="fn">owner</span>(<span class="prop">userId</span>: <span class="type">string</span>, <span class="prop">branchId</span>: <span class="type">string</span>, <span class="prop">tx</span>: <span class="type">DbClient</span> = <span class="kw">this</span>.<span class="prop">db</span>.<span class="prop">pool</span>) {</div>
+<div>    <span class="kw">const</span> <span class="prop">allowed</span> = <span class="kw">await</span> <span class="prop">tx</span>.<span class="fn">query</span>(<span class="str">`SELECT 1 FROM identity.roles WHERE user_id=$1</div>
+<div>      AND (role='admin' OR (branch_id=$2 AND role='branch_owner')) LIMIT 1`</span>, [<span class="prop">userId</span>, <span class="prop">branchId</span>]);</div>
+<div>    <span class="fn">invariant</span>(<span class="prop">allowed</span>.<span class="prop">rowCount</span>, <span class="str">'FORBIDDEN'</span>, <span class="str">'Branch owner permission required'</span>, <span class="num">403</span>);</div>
+<div>  }</div>
+<div>  <span class="cm">// Kiểm tra quyền Quản trị viên toàn hệ thống (admin)</span></div>
+<div>  <span class="kw">async</span> <span class="fn">admin</span>(<span class="prop">userId</span>: <span class="type">string</span>, <span class="prop">tx</span>: <span class="type">DbClient</span> = <span class="kw">this</span>.<span class="prop">db</span>.<span class="prop">pool</span>) {</div>
+<div>    <span class="kw">const</span> <span class="prop">allowed</span> = <span class="kw">await</span> <span class="prop">tx</span>.<span class="fn">query</span>(<span class="str">"SELECT 1 FROM identity.roles WHERE user_id=$1 AND role='admin' LIMIT 1"</span>, [<span class="prop">userId</span>]);</div>
+<div>    <span class="fn">invariant</span>(<span class="prop">allowed</span>.<span class="prop">rowCount</span>, <span class="str">'FORBIDDEN'</span>, <span class="str">'Admin permission required'</span>, <span class="num">403</span>);</div>
+<div>  }</div>
+<div>}</div>
+    </div>
+  </div>
+  <div class="statusbar">
+    <div class="status-left">
+      <span>&#x2942; main*</span>
+      <span>&#x2713; 0 &#x26A0; 0</span>
+    </div>
+    <div class="status-right">
+      <span>Ln 9, Col 1</span>
+      <span>Spaces: 2</span>
+      <span>UTF-8</span>
+      <span>TypeScript</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>
