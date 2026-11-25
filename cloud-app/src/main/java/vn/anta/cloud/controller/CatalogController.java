@@ -164,20 +164,7 @@ public class CatalogController {
     }
 
     private boolean isSlotTaken(String yardId, Instant start, Instant end, Instant now) {
-        for (AntaStore.BookingRecord b : store.getBookings().values()) {
-            if (!yardId.equals(b.yardId())) continue;
-            if ("CANCELLED".equals(b.status()) || "EXPIRED".equals(b.status())) continue;
-            if (b.startsAt().isBefore(end) && b.endsAt().isAfter(start)) return true;
-        }
-        for (AntaStore.BlockRecord blk : store.getBlocks().values()) {
-            if (!yardId.equals(blk.yardId())) continue;
-            if (blk.startsAt().isBefore(end) && blk.endsAt().isAfter(start)) return true;
-        }
-        for (AntaStore.HoldRecord h : store.getHolds().values()) {
-            if (!yardId.equals(h.yardId()) || !h.expiresAt().isAfter(now)) continue;
-            if (h.startsAt().isBefore(end) && h.endsAt().isAfter(start)) return true;
-        }
-        return false;
+        return store.isSlotTaken(yardId, start, end, now);
     }
 
     @PostMapping("/media/presign")

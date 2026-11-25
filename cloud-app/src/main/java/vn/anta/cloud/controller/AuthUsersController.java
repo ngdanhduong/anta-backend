@@ -66,7 +66,7 @@ public class AuthUsersController {
         String challengeId = "challenge-" + UUID.randomUUID();
         String code = String.format("%06d", new Random().nextInt(1_000_000));
         Instant expiresAt = Instant.now().plus(15, ChronoUnit.MINUTES);
-        store.getOtpChallenges().put(challengeId, new AntaStore.OtpRecord(challengeId, identifier, code, expiresAt, null));
+        store.saveOtpChallenge(challengeId, identifier, code, expiresAt);
 
         boolean emailed = identifier.contains("@") && emailService.sendOtpEmail(identifier, code, purpose);
         String delivery = emailed ? "provider" : "development-only";
@@ -80,7 +80,7 @@ public class AuthUsersController {
 
     @GetMapping("/dev/otp/{challengeId}")
     public ResponseEntity<Map<String, Object>> getDevOtp(@PathVariable String challengeId) {
-        AntaStore.OtpRecord otp = store.getOtpChallenges().get(challengeId);
+        AntaStore.OtpRecord otp = store.findOtpChallenge(challengeId);
         if (otp == null) {
             return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Mã thử nghiệm không tồn tại hoặc đã hết hạn");
         }
@@ -91,7 +91,7 @@ public class AuthUsersController {
     public ResponseEntity<Map<String, Object>> verifyOtp(@RequestBody(required = false) Map<String, Object> req) {
         String challengeId = req != null ? Objects.toString(req.get("challengeId"), "") : "";
         String code = req != null ? Objects.toString(req.get("code"), "").trim() : "";
-        AntaStore.OtpRecord otp = store.getOtpChallenges().get(challengeId);
+        AntaStore.OtpRecord otp = store.findOtpChallenge(challengeId);
         if (otp == null) {
             return AntaStore.error(HttpStatus.BAD_REQUEST, "OTP_EXPIRED", "Phiên xác thực đã hết hạn");
         }
@@ -99,7 +99,7 @@ public class AuthUsersController {
             return AntaStore.error(HttpStatus.BAD_REQUEST, "OTP_INVALID", "Mã xác thực không chính xác");
         }
         String token = "verify-token-" + UUID.randomUUID();
-        store.getVerificationTokens().put(token, otp.identifier());
+        store.saveVerificationToken(token, otp.identifier());
         return ResponseEntity.ok(Map.of("data", Map.of("verificationToken", token)));
     }
 
@@ -115,15 +115,14 @@ public class AuthUsersController {
         if (identifier.isEmpty() || password.length() < 6) {
             return AntaStore.error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Email/SĐT không hợp lệ hoặc mật khẩu quá ngắn");
         }
-        if (vToken.isBlank() || !store.getVerificationTokens().containsKey(vToken)) {
-            return AntaStore.error(HttpStatus.BAD_REQUEST, "INVALID_VERIFICATION_TOKEN", "Mã xác thực không hợp lệ");
-        }
-        String key = identifier.toLowerCase(Locale.ROOT);
-        if (store.getUserIdByIdentifier().containsKey(key)) {
+        if (store.findUserByIdentifier(identifier) != null) {
             return AntaStore.error(HttpStatus.CONFLICT, "CONFLICT", "Tài khoản này đã được đăng ký");
         }
-        store.getVerificationTokens().remove(vToken);
-        AntaStore.UserRecord user = store.seedUser("user-" + UUID.randomUUID().toString().substring(0, 8), identifier, displayName, password, true);
+        if (!store.consumeVerificationToken(vToken)) {
+            return AntaStore.error(HttpStatus.BAD_REQUEST, "INVALID_VERIFICATION_TOKEN", "Mã xác thực không hợp lệ");
+        }
+        AntaStore.UserRecord user = store.createUser("user-" + UUID.randomUUID().toString().substring(0, 8), identifier, displayName, password, true);
+        store.recordAudit(user.id(), "user.register", "user", user.id(), Map.of("identifier", identifier));
         return ResponseEntity.ok(Map.of("data", store.issueTokenBundle(user)));
     }
 
@@ -134,12 +133,8 @@ public class AuthUsersController {
         if (identifier.isEmpty()) {
             return AntaStore.error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Vui lòng nhập email hoặc số điện thoại");
         }
-        String userId = store.getUserIdByIdentifier().get(identifier.toLowerCase(Locale.ROOT));
-        AntaStore.UserRecord user = userId != null ? store.getUsersById().get(userId) : null;
-        if (user == null) {
-            return AntaStore.error(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Sai tài khoản hoặc mật khẩu");
-        }
-        if (user.passwordLogin() && !user.password().isEmpty() && !user.password().equals(password)) {
+        AntaStore.UserRecord user = store.findUserByIdentifier(identifier);
+        if (user == null || !store.verifyPassword(password, user)) {
             return AntaStore.error(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Sai tài khoản hoặc mật khẩu");
         }
         return ResponseEntity.ok(Map.of("data", store.issueTokenBundle(user)));
@@ -152,7 +147,7 @@ public class AuthUsersController {
         if (user == null) {
             return AntaStore.unauthorized();
         }
-        store.getRevokedTokens().add(refreshToken);
+        store.revokeToken(refreshToken);
         return ResponseEntity.ok(Map.of("data", store.issueTokenBundle(user)));
     }
 
@@ -182,39 +177,33 @@ public class AuthUsersController {
             }
         }
 
-        String existingId = store.getUserIdByIdentifier().get(email.toLowerCase(Locale.ROOT));
-        AntaStore.UserRecord user;
-        if (existingId != null && store.getUsersById().containsKey(existingId)) {
-            user = store.getUsersById().get(existingId);
-        } else {
-            String newId = "user-gg-" + UUID.randomUUID().toString().substring(0, 8);
-            user = store.seedUser(newId, email, name, "", false);
+        AntaStore.UserRecord user = store.findUserByIdentifier(email);
+        if (user == null) {
+            user = store.createUser("user-gg-" + UUID.randomUUID().toString().substring(0, 8), email, name, "", false);
         }
         return ResponseEntity.ok(Map.of("data", store.issueTokenBundle(user)));
     }
 
     @PostMapping("/public/auth/reset-password")
     public ResponseEntity<Map<String, Object>> resetPassword(@RequestBody(required = false) Map<String, Object> req) {
-        String identifier = req != null ? Objects.toString(req.get("identifier"), "").trim().toLowerCase(Locale.ROOT) : "";
+        String identifier = req != null ? Objects.toString(req.get("identifier"), "").trim() : "";
         String password = req != null ? Objects.toString(req.get("password"), "") : "";
         String vToken = req != null ? Objects.toString(req.get("verificationToken"), "") : "";
-        if (vToken.isBlank() || !store.getVerificationTokens().containsKey(vToken)) {
+        if (!store.consumeVerificationToken(vToken)) {
             return AntaStore.error(HttpStatus.BAD_REQUEST, "INVALID_VERIFICATION_TOKEN", "Mã xác thực không hợp lệ");
         }
-        String userId = store.getUserIdByIdentifier().get(identifier);
-        if (userId == null) {
+        AntaStore.UserRecord old = store.findUserByIdentifier(identifier);
+        if (old == null) {
             return AntaStore.error(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy tài khoản");
         }
-        AntaStore.UserRecord old = store.getUsersById().get(userId);
-        store.seedUser(old.id(), old.identifier(), old.displayName(), password, true);
-        store.getVerificationTokens().remove(vToken);
+        store.updateUserPassword(old.id(), password);
         return ResponseEntity.ok(Map.of("data", Map.of("ok", true)));
     }
 
     @PostMapping("/auth/logout")
     public Map<String, Object> logout(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
         if (auth != null && auth.startsWith("Bearer ")) {
-            store.getRevokedTokens().add(auth.substring(7).trim());
+            store.revokeToken(auth.substring(7).trim());
         }
         return Map.of("data", Map.of("ok", true));
     }
@@ -222,9 +211,7 @@ public class AuthUsersController {
     @GetMapping({"/users/me", "/user/me"})
     public ResponseEntity<Map<String, Object>> me(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
         AntaStore.UserRecord user = store.resolveUser(auth);
-        if (user == null) {
-            return AntaStore.unauthorized();
-        }
+        if (user == null) return AntaStore.unauthorized();
         return ResponseEntity.ok(Map.of("data", AntaStore.userMap(user)));
     }
 
@@ -234,24 +221,19 @@ public class AuthUsersController {
             @RequestBody(required = false) Map<String, Object> req
     ) {
         AntaStore.UserRecord user = store.resolveUser(auth);
-        if (user == null) {
-            return AntaStore.unauthorized();
-        }
+        if (user == null) return AntaStore.unauthorized();
         String displayName = req != null ? Objects.toString(req.get("displayName"), user.displayName()).trim() : user.displayName();
-        AntaStore.UserRecord updated = store.seedUser(user.id(), user.identifier(), displayName, user.password(), user.passwordLogin());
+        AntaStore.UserRecord updated = store.updateUserDisplayName(user.id(), displayName);
         return ResponseEntity.ok(Map.of("data", AntaStore.userMap(updated)));
     }
 
     @DeleteMapping({"/users/me", "/user/me"})
     public ResponseEntity<Map<String, Object>> deleteAccount(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
         AntaStore.UserRecord user = store.resolveUser(auth);
-        if (user == null) {
-            return AntaStore.unauthorized();
-        }
-        store.getUsersById().remove(user.id());
-        store.getUserIdByIdentifier().remove(user.identifier().toLowerCase(Locale.ROOT));
+        if (user == null) return AntaStore.unauthorized();
+        store.deleteUser(user.id());
         if (auth != null && auth.startsWith("Bearer ")) {
-            store.getRevokedTokens().add(auth.substring(7).trim());
+            store.revokeToken(auth.substring(7).trim());
         }
         return ResponseEntity.ok(Map.of("data", Map.of("deleted", true)));
     }
@@ -259,15 +241,11 @@ public class AuthUsersController {
     @GetMapping({"/users/me/favorites", "/user/me/favorites"})
     public ResponseEntity<Map<String, Object>> favorites(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
         AntaStore.UserRecord user = store.resolveUser(auth);
-        if (user == null) {
-            return AntaStore.unauthorized();
-        }
+        if (user == null) return AntaStore.unauthorized();
         List<Map<String, Object>> items = new ArrayList<>();
         for (String branchId : store.favoriteIds(user.id())) {
             Map<String, Object> branch = store.findBranch(branchId);
-            if (branch != null) {
-                items.add(store.branchWithDistance(branch, 10.7721, 106.6951));
-            }
+            if (branch != null) items.add(store.branchWithDistance(branch, 10.7721, 106.6951));
         }
         return ResponseEntity.ok(Map.of("data", items));
     }
@@ -278,12 +256,8 @@ public class AuthUsersController {
             @PathVariable String venueId
     ) {
         AntaStore.UserRecord user = store.resolveUser(auth);
-        if (user == null) {
-            return AntaStore.unauthorized();
-        }
-        List<String> favs = store.favoriteIds(user.id());
-        favs.remove(venueId);
-        favs.add(0, venueId);
+        if (user == null) return AntaStore.unauthorized();
+        store.addFavorite(user.id(), venueId);
         return ResponseEntity.ok(Map.of("data", Map.of("favorite", true)));
     }
 
@@ -293,10 +267,8 @@ public class AuthUsersController {
             @PathVariable String venueId
     ) {
         AntaStore.UserRecord user = store.resolveUser(auth);
-        if (user == null) {
-            return AntaStore.unauthorized();
-        }
-        store.favoriteIds(user.id()).remove(venueId);
+        if (user == null) return AntaStore.unauthorized();
+        store.removeFavorite(user.id(), venueId);
         return ResponseEntity.ok(Map.of("data", Map.of("favorite", false)));
     }
 }

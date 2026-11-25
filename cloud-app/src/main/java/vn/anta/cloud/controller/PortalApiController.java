@@ -6,13 +6,14 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import vn.anta.cloud.store.AntaStore;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
-/** REST APIs serving the Owner (/owner/) and Admin (/admin/) web portals backed by AntaStore. */
+/** REST APIs serving the Owner (/owner/) and Admin (/admin/) web portals backed by AntaStore (PostgreSQL). */
 @RestController
 @RequestMapping("/api/v1")
 public class PortalApiController {
@@ -27,8 +28,7 @@ public class PortalApiController {
 
     @GetMapping("/admin/branches")
     public ResponseEntity<Map<String, Object>> adminBranches(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
-        AntaStore.UserRecord actor = requireAdmin(auth);
-        if (actor == null) return adminDenied(auth);
+        if (requireAdmin(auth) == null) return adminDenied(auth);
         List<Map<String, Object>> list = store.getBranches().stream()
                 .map(b -> Map.<String, Object>of("id", Objects.toString(b.get("id"), ""), "name", Objects.toString(b.get("name"), "")))
                 .toList();
@@ -38,27 +38,29 @@ public class PortalApiController {
     @GetMapping("/admin/stats")
     public ResponseEntity<Map<String, Object>> adminStats(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
         if (requireAdmin(auth) == null) return adminDenied(auth);
-        long totalUsers = store.getUsersById().size();
-        long activeUsers = store.getUsersById().values().stream().filter(u -> "ACTIVE".equals(u.status())).count();
-        long confirmed = store.getBookings().values().stream().filter(b -> "CONFIRMED".equals(b.status())).count();
-        long pending = store.getBookings().values().stream()
+        List<AntaStore.UserRecord> allUsers = store.listAllUsers();
+        List<AntaStore.BookingRecord> allBookings = store.listAllBookings();
+        List<AntaStore.PaymentIntentRecord> allPayments = store.listPaymentIntents();
+        List<AntaStore.RefundRecord> allRefunds = store.listRefunds();
+
+        long activeUsers = allUsers.stream().filter(u -> "ACTIVE".equals(u.status())).count();
+        long confirmed = allBookings.stream().filter(b -> "CONFIRMED".equals(b.status())).count();
+        long pending = allBookings.stream()
                 .filter(b -> "PENDING_PAYMENT".equals(b.status()) || "PENDING_OWNER_CONFIRMATION".equals(b.status())).count();
-        long cancelled = store.getBookings().values().stream().filter(b -> "CANCELLED".equals(b.status())).count();
-        long payCount = store.getPaymentIntents().values().stream().filter(p -> "SUCCEEDED".equals(p.status())).count();
-        long paidTotal = store.getPaymentIntents().values().stream()
-                .filter(p -> "SUCCEEDED".equals(p.status())).mapToLong(AntaStore.PaymentIntentRecord::amount).sum();
-        long refundedTotal = store.getRefunds().values().stream()
-                .filter(r -> "SUCCEEDED".equals(r.status())).mapToLong(AntaStore.RefundRecord::amount).sum();
-        long openRefunds = store.getRefunds().values().stream().filter(r -> !"SUCCEEDED".equals(r.status())).count();
-        long latePayments = store.getPaymentIntents().values().stream().filter(p -> "NEEDS_REVIEW".equals(p.status())).count();
+        long cancelled = allBookings.stream().filter(b -> "CANCELLED".equals(b.status())).count();
+        long payCount = allPayments.stream().filter(p -> "SUCCEEDED".equals(p.status())).count();
+        long paidTotal = allPayments.stream().filter(p -> "SUCCEEDED".equals(p.status())).mapToLong(AntaStore.PaymentIntentRecord::amount).sum();
+        long refundedTotal = allRefunds.stream().filter(r -> "SUCCEEDED".equals(r.status())).mapToLong(AntaStore.RefundRecord::amount).sum();
+        long openRefunds = allRefunds.stream().filter(r -> !"SUCCEEDED".equals(r.status())).count();
+        long latePayments = allPayments.stream().filter(p -> "NEEDS_REVIEW".equals(p.status())).count();
 
         Map<String, Object> stats = new LinkedHashMap<>();
-        stats.put("users", Map.of("active", activeUsers, "total", totalUsers));
+        stats.put("users", Map.of("active", activeUsers, "total", allUsers.size()));
         stats.put("bookings", Map.of("confirmed", confirmed, "pending", pending, "cancelled", cancelled));
         stats.put("payments", Map.of("count", payCount, "paid", paidTotal, "refunded", refundedTotal));
         stats.put("openRefunds", openRefunds);
         stats.put("latePaymentsToReview", latePayments);
-        stats.put("pendingDeletions", store.getDeletionRequests().size());
+        stats.put("pendingDeletions", 0);
         return ResponseEntity.ok(Map.of("data", stats));
     }
 
@@ -69,12 +71,11 @@ public class PortalApiController {
     ) {
         if (requireAdmin(auth) == null) return adminDenied(auth);
         String normQ = (q != null && !q.isBlank()) ? AntaStore.normalizeSearch(q) : null;
-        List<Map<String, Object>> rows = store.getUsersById().values().stream()
+        List<Map<String, Object>> rows = store.listAllUsers().stream()
                 .filter(u -> normQ == null
                         || AntaStore.normalizeSearch(u.identifier()).contains(normQ)
                         || AntaStore.normalizeSearch(u.displayName()).contains(normQ)
                         || u.id().toLowerCase(Locale.ROOT).contains(normQ))
-                .sorted(Comparator.comparing(AntaStore.UserRecord::createdAt).reversed())
                 .map(u -> {
                     Map<String, Object> row = new LinkedHashMap<>();
                     row.put("id", u.id());
@@ -104,7 +105,7 @@ public class PortalApiController {
         String userId = Objects.toString(req.get("userId"), "");
         String role = Objects.toString(req.get("role"), "");
         String branchId = req.get("branchId") != null ? Objects.toString(req.get("branchId")) : null;
-        if (!store.getUsersById().containsKey(userId) || role.isBlank()) {
+        if (store.findUserById(userId) == null || role.isBlank()) {
             return AntaStore.error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Thiếu userId hoặc role");
         }
         store.grantRole(userId, role, branchId);
@@ -122,11 +123,8 @@ public class PortalApiController {
         String userId = Objects.toString(req.get("userId"), "");
         String role = Objects.toString(req.get("role"), "");
         String branchId = req.get("branchId") != null ? Objects.toString(req.get("branchId")) : null;
-        if ("admin".equalsIgnoreCase(role) && userId.equals(actor.id())) {
-            long adminCount = store.getUsersById().keySet().stream().filter(id -> store.hasRole(id, "admin")).count();
-            if (adminCount <= 1) {
-                return AntaStore.error(HttpStatus.CONFLICT, "LAST_ADMIN", "Không thể thu hồi quyền của quản trị viên cuối cùng");
-            }
+        if ("admin".equalsIgnoreCase(role) && userId.equals(actor.id()) && store.countAdmins() <= 1) {
+            return AntaStore.error(HttpStatus.CONFLICT, "LAST_ADMIN", "Không thể thu hồi quyền của quản trị viên cuối cùng");
         }
         store.revokeRole(userId, role, branchId);
         store.recordAudit(actor.id(), "role.revoke", "user", userId, Map.of("role", role, "branchId", Objects.toString(branchId, "")));
@@ -139,11 +137,10 @@ public class PortalApiController {
             @RequestParam(required = false) String status
     ) {
         if (requireAdmin(auth) == null) return adminDenied(auth);
-        List<Map<String, Object>> rows = store.getBookings().values().stream()
+        List<Map<String, Object>> rows = store.listAllBookings().stream()
                 .filter(b -> status == null || status.isBlank() || status.equalsIgnoreCase(b.status()))
-                .sorted(Comparator.comparing(AntaStore.BookingRecord::createdAt).reversed())
                 .map(b -> {
-                    AntaStore.UserRecord u = store.getUsersById().get(b.userId());
+                    AntaStore.UserRecord u = store.findUserById(b.userId());
                     Map<String, Object> row = new LinkedHashMap<>();
                     row.put("id", b.id());
                     row.put("identifier", u != null ? u.identifier() : b.userId());
@@ -165,11 +162,10 @@ public class PortalApiController {
             @RequestParam(required = false) String status
     ) {
         if (requireAdmin(auth) == null) return adminDenied(auth);
-        List<Map<String, Object>> rows = store.getPaymentIntents().values().stream()
+        List<Map<String, Object>> rows = store.listPaymentIntents().stream()
                 .filter(p -> status == null || status.isBlank() || status.equalsIgnoreCase(p.status()))
-                .sorted(Comparator.comparing(AntaStore.PaymentIntentRecord::updatedAt).reversed())
                 .map(p -> {
-                    AntaStore.UserRecord u = store.getUsersById().get(p.userId());
+                    AntaStore.UserRecord u = store.findUserById(p.userId());
                     Map<String, Object> row = new LinkedHashMap<>();
                     row.put("id", p.id());
                     row.put("order_code", p.bookingId());
@@ -192,11 +188,11 @@ public class PortalApiController {
     ) {
         AntaStore.UserRecord actor = requireAdmin(auth);
         if (actor == null) return adminDenied(auth);
-        AntaStore.PaymentIntentRecord pi = store.getPaymentIntents().get(id);
+        AntaStore.PaymentIntentRecord pi = store.findPaymentIntent(id);
         if (pi == null) return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy giao dịch");
         String refundId = "rf-" + UUID.randomUUID().toString().substring(0, 8);
-        store.getPaymentIntents().put(id, pi.withRefund("MANUAL_REVIEW"));
-        store.getRefunds().put(refundId, new AntaStore.RefundRecord(refundId, pi.bookingId(), "sandbox", pi.amount(), 100, "Admin khởi tạo hoàn tiền", "MANUAL_REVIEW", null, Instant.now()));
+        store.savePaymentIntent(new AntaStore.PaymentIntentRecord(pi.id(), pi.bookingId(), pi.userId(), pi.amount(), pi.status(), "MANUAL_REVIEW", Instant.now()));
+        store.saveRefund(new AntaStore.RefundRecord(refundId, pi.bookingId(), "sandbox", pi.amount(), 100, "Admin khởi tạo hoàn tiền", "MANUAL_REVIEW", null, Instant.now()));
         store.recordAudit(actor.id(), "payment.refund", "payment_intent", id, Map.of("refundId", refundId));
         return ResponseEntity.ok(Map.of("data", Map.of("refundId", refundId)));
     }
@@ -207,9 +203,8 @@ public class PortalApiController {
             @RequestParam(required = false) String status
     ) {
         if (requireAdmin(auth) == null) return adminDenied(auth);
-        List<Map<String, Object>> rows = store.getRefunds().values().stream()
+        List<Map<String, Object>> rows = store.listRefunds().stream()
                 .filter(r -> status == null || status.isBlank() || status.equalsIgnoreCase(r.status()))
-                .sorted(Comparator.comparing(AntaStore.RefundRecord::createdAt).reversed())
                 .map(r -> {
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("id", r.id());
@@ -234,11 +229,11 @@ public class PortalApiController {
     ) {
         AntaStore.UserRecord actor = requireAdmin(auth);
         if (actor == null) return adminDenied(auth);
-        AntaStore.RefundRecord rf = store.getRefunds().get(id);
+        AntaStore.RefundRecord rf = store.findRefund(id);
         if (rf == null) return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy yêu cầu hoàn tiền");
         String outcome = Objects.toString(req.get("outcome"), "SUCCEEDED");
         String providerRef = req.get("providerRef") != null ? Objects.toString(req.get("providerRef")) : rf.providerRef();
-        store.getRefunds().put(id, new AntaStore.RefundRecord(rf.id(), rf.orderCode(), rf.provider(), rf.amount(), rf.percent(), rf.reason(), outcome, providerRef, rf.createdAt()));
+        store.saveRefund(new AntaStore.RefundRecord(rf.id(), rf.orderCode(), rf.provider(), rf.amount(), rf.percent(), rf.reason(), outcome, providerRef, rf.createdAt()));
         store.recordAudit(actor.id(), "refund.resolve", "refund", id, Map.of("outcome", outcome));
         return ResponseEntity.ok(Map.of("data", Map.of("status", outcome)));
     }
@@ -246,13 +241,13 @@ public class PortalApiController {
     @GetMapping("/admin/deletion-requests")
     public ResponseEntity<Map<String, Object>> adminDeletions(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
         if (requireAdmin(auth) == null) return adminDenied(auth);
-        return ResponseEntity.ok(Map.of("data", store.getDeletionRequests()));
+        return ResponseEntity.ok(Map.of("data", List.of()));
     }
 
     @GetMapping("/admin/audit-events")
     public ResponseEntity<Map<String, Object>> adminAudit(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
         if (requireAdmin(auth) == null) return adminDenied(auth);
-        List<Map<String, Object>> rows = store.getAuditEvents().stream()
+        List<Map<String, Object>> rows = store.listAuditEvents().stream()
                 .map(e -> Map.<String, Object>of(
                         "id", e.id(),
                         "created_at", e.createdAt().toString(),
@@ -271,8 +266,7 @@ public class PortalApiController {
     public ResponseEntity<Map<String, Object>> ownerBranches(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
         AntaStore.UserRecord user = store.resolveUser(auth);
         if (user == null) return AntaStore.unauthorized();
-        List<Map<String, Object>> owned = resolveOwnedBranches(user);
-        List<Map<String, Object>> result = owned.stream()
+        List<Map<String, Object>> result = resolveOwnedBranches(user).stream()
                 .map(b -> Map.<String, Object>of("id", Objects.toString(b.get("id"), ""), "name", Objects.toString(b.get("name"), "")))
                 .toList();
         return ResponseEntity.ok(Map.of("data", result));
@@ -290,7 +284,7 @@ public class PortalApiController {
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
         Instant now = Instant.now();
         Instant weekAgo = now.minus(7, ChronoUnit.DAYS);
-        List<AntaStore.BookingRecord> list = store.getBookings().values().stream().filter(b -> branchId.equals(b.branchId())).toList();
+        List<AntaStore.BookingRecord> list = store.listBookingsByBranch(branchId);
         long pendingConfirm = list.stream().filter(b -> "PENDING_OWNER_CONFIRMATION".equals(b.status())).count();
         long todayCount = list.stream().filter(b -> b.startsAt().atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toLocalDate().equals(today)).count();
         long upcoming = list.stream().filter(b -> b.startsAt().isAfter(now) && !"CANCELLED".equals(b.status())).count();
@@ -336,12 +330,11 @@ public class PortalApiController {
                 )).toList();
 
         LocalDate targetDate = LocalDate.parse(date);
-        List<Map<String, Object>> bookings = store.getBookings().values().stream()
-                .filter(b -> branchId.equals(b.branchId()))
+        List<Map<String, Object>> bookings = store.listBookingsByBranch(branchId).stream()
                 .filter(b -> !"CANCELLED".equals(b.status()) && !"EXPIRED".equals(b.status()))
                 .filter(b -> b.startsAt().atZone(ZoneId.of(tz)).toLocalDate().equals(targetDate))
                 .map(b -> {
-                    AntaStore.UserRecord customer = store.getUsersById().get(b.userId());
+                    AntaStore.UserRecord customer = store.findUserById(b.userId());
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("id", b.id());
                     m.put("yard_id", b.yardId());
@@ -353,8 +346,7 @@ public class PortalApiController {
                     return m;
                 }).toList();
 
-        List<Map<String, Object>> blocks = store.getBlocks().values().stream()
-                .filter(blk -> branchId.equals(blk.branchId()))
+        List<Map<String, Object>> blocks = store.listBlocksByBranch(branchId).stream()
                 .filter(blk -> blk.startsAt().atZone(ZoneId.of(tz)).toLocalDate().equals(targetDate))
                 .map(AntaStore.BlockRecord::toMap)
                 .toList();
@@ -391,7 +383,7 @@ public class PortalApiController {
         String reason = Objects.toString(req.get("reason"), "Bảo trì sân");
         String id = "blk-" + UUID.randomUUID().toString().substring(0, 8);
         AntaStore.BlockRecord block = new AntaStore.BlockRecord(id, branchId, courtId, startsAt, endsAt, reason);
-        store.getBlocks().put(id, block);
+        store.saveBlock(block);
         return ResponseEntity.ok(Map.of("data", block.toMap()));
     }
 
@@ -402,10 +394,10 @@ public class PortalApiController {
     ) {
         AntaStore.UserRecord user = store.resolveUser(auth);
         if (user == null) return AntaStore.unauthorized();
-        AntaStore.BlockRecord blk = store.getBlocks().get(id);
+        AntaStore.BlockRecord blk = store.findBlock(id);
         if (blk == null) return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy khung giờ khóa");
         if (!canManageBranch(user, blk.branchId())) return AntaStore.error(HttpStatus.FORBIDDEN, "FORBIDDEN", "Không có quyền");
-        store.getBlocks().remove(id);
+        store.deleteBlock(id);
         return ResponseEntity.ok(Map.of("data", Map.of("released", true)));
     }
 
@@ -424,20 +416,18 @@ public class PortalApiController {
         if (!canManageBranch(user, branchId)) return AntaStore.error(HttpStatus.FORBIDDEN, "FORBIDDEN", "Không có quyền");
         String normQ = (q != null && !q.isBlank()) ? AntaStore.normalizeSearch(q) : null;
 
-        List<Map<String, Object>> all = store.getBookings().values().stream()
-                .filter(b -> branchId.equals(b.branchId()))
+        List<Map<String, Object>> all = store.listBookingsByBranch(branchId).stream()
                 .filter(b -> status == null || status.isBlank() || status.equalsIgnoreCase(b.status()))
                 .filter(b -> source == null || source.isBlank() || source.equalsIgnoreCase(b.source()))
                 .filter(b -> {
                     if (normQ == null) return true;
-                    AntaStore.UserRecord customer = store.getUsersById().get(b.userId());
+                    AntaStore.UserRecord customer = store.findUserById(b.userId());
                     return b.id().toLowerCase(Locale.ROOT).contains(normQ)
                             || (customer != null && (AntaStore.normalizeSearch(customer.displayName()).contains(normQ)
                             || AntaStore.normalizeSearch(customer.identifier()).contains(normQ)));
                 })
-                .sorted(Comparator.comparing(AntaStore.BookingRecord::createdAt).reversed())
                 .map(b -> {
-                    AntaStore.UserRecord customer = store.getUsersById().get(b.userId());
+                    AntaStore.UserRecord customer = store.findUserById(b.userId());
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("id", b.id());
                     m.put("customer_name", customer != null ? customer.displayName() : "Khách Anta");
@@ -469,12 +459,12 @@ public class PortalApiController {
     ) {
         AntaStore.UserRecord user = store.resolveUser(auth);
         if (user == null) return AntaStore.unauthorized();
-        AntaStore.BookingRecord b = store.getBookings().get(id);
+        AntaStore.BookingRecord b = store.findBooking(id);
         if (b == null) return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy đơn");
         if (!canManageBranch(user, b.branchId())) return AntaStore.error(HttpStatus.FORBIDDEN, "FORBIDDEN", "Không có quyền");
 
-        AntaStore.UserRecord customer = store.getUsersById().get(b.userId());
-        long hours = Math.max(1, java.time.Duration.between(b.startsAt(), b.endsAt()).toHours());
+        AntaStore.UserRecord customer = store.findUserById(b.userId());
+        long hours = Math.max(1, Duration.between(b.startsAt(), b.endsAt()).toHours());
         boolean paid = "CONFIRMED".equals(b.status()) || "PENDING_OWNER_CONFIRMATION".equals(b.status());
 
         Map<String, Object> detail = new LinkedHashMap<>();
@@ -509,10 +499,10 @@ public class PortalApiController {
     ) {
         AntaStore.UserRecord user = store.resolveUser(auth);
         if (user == null) return AntaStore.unauthorized();
-        AntaStore.BookingRecord b = store.getBookings().get(id);
+        AntaStore.BookingRecord b = store.findBooking(id);
         if (b == null) return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy đơn");
         if (!canManageBranch(user, b.branchId())) return AntaStore.error(HttpStatus.FORBIDDEN, "FORBIDDEN", "Không có quyền");
-        store.getBookings().put(id, b.withStatus("CONFIRMED", "Chủ sân xác nhận"));
+        store.updateBookingStatus(id, "CONFIRMED", "Chủ sân xác nhận");
         store.recordAudit(user.id(), "booking.confirm", "booking", id, Map.of());
         return ResponseEntity.ok(Map.of("data", Map.of("status", "CONFIRMED")));
     }
@@ -525,21 +515,18 @@ public class PortalApiController {
     ) {
         AntaStore.UserRecord user = store.resolveUser(auth);
         if (user == null) return AntaStore.unauthorized();
-        AntaStore.BookingRecord b = store.getBookings().get(id);
+        AntaStore.BookingRecord b = store.findBooking(id);
         if (b == null) return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy đơn");
         if (!canManageBranch(user, b.branchId())) return AntaStore.error(HttpStatus.FORBIDDEN, "FORBIDDEN", "Không có quyền");
         String reason = req != null ? Objects.toString(req.get("reason"), "Chủ sân từ chối") : "Chủ sân từ chối";
-        store.getBookings().put(id, b.withStatus("CANCELLED", reason));
+        store.updateBookingStatus(id, "CANCELLED", reason);
         store.recordAudit(user.id(), "booking.reject", "booking", id, Map.of("reason", reason));
         return ResponseEntity.ok(Map.of("data", Map.of("status", "CANCELLED")));
     }
 
     private AntaStore.UserRecord requireAdmin(String auth) {
         AntaStore.UserRecord user = store.resolveUser(auth);
-        if (user != null && store.hasRole(user.id(), "admin")) {
-            return user;
-        }
-        return null;
+        return (user != null && store.hasRole(user.id(), "admin")) ? user : null;
     }
 
     private ResponseEntity<Map<String, Object>> adminDenied(String auth) {
@@ -549,9 +536,7 @@ public class PortalApiController {
     }
 
     private List<Map<String, Object>> resolveOwnedBranches(AntaStore.UserRecord user) {
-        if (store.hasRole(user.id(), "admin")) {
-            return store.getBranches();
-        }
+        if (store.hasRole(user.id(), "admin")) return store.getBranches();
         Set<String> ids = new LinkedHashSet<>();
         boolean globalOwner = false;
         for (AntaStore.RoleEntry r : store.rolesFor(user.id())) {

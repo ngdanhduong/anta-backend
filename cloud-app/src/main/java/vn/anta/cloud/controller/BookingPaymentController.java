@@ -27,24 +27,26 @@ public class BookingPaymentController {
             @RequestBody Map<String, Object> req
     ) {
         AntaStore.UserRecord user = store.resolveUser(auth);
-        if (user == null) {
-            return AntaStore.unauthorized();
-        }
+        if (user == null) return AntaStore.unauthorized();
         String yardId = Objects.toString(req.get("yardId"), "");
         Instant startsAt = Instant.parse(Objects.toString(req.get("startsAt")));
         Instant endsAt = Instant.parse(Objects.toString(req.get("endsAt")));
 
+        if (store.isSlotTaken(yardId, startsAt, endsAt, Instant.now())) {
+            return AntaStore.error(HttpStatus.CONFLICT, "SLOT_TAKEN", "Khung giờ này đã có người đặt hoặc giữ chỗ");
+        }
+
         Map<String, Object> yard = store.findYard(yardId);
-        Map<String, Object> branch = store.findBranchByYard(yardId);
-        String branchId = branch != null ? Objects.toString(branch.get("id"), "branch-default") : "branch-default";
+        String branchId = Optional.ofNullable(store.findBranchByYard(yardId))
+                .map(b -> Objects.toString(b.get("id"), "branch-default"))
+                .orElse("branch-default");
         long hourlyPrice = yard != null ? AntaStore.longVal(yard.get("hourly_price"), 150000L) : 150000L;
         long hours = Math.max(1, Duration.between(startsAt, endsAt).toHours());
         long total = hourlyPrice * hours;
 
         String holdId = "hold-" + UUID.randomUUID();
         Instant expiresAt = Instant.now().plus(10, ChronoUnit.MINUTES);
-        AntaStore.HoldRecord hold = new AntaStore.HoldRecord(holdId, user.id(), yardId, branchId, startsAt, endsAt, total, expiresAt);
-        store.getHolds().put(holdId, hold);
+        store.saveHold(new AntaStore.HoldRecord(holdId, user.id(), yardId, branchId, startsAt, endsAt, total, expiresAt));
 
         return ResponseEntity.ok(Map.of("data", Map.of(
                 "holdId", holdId,
@@ -54,18 +56,15 @@ public class BookingPaymentController {
     }
 
     @PostMapping("/bookings")
-    @SuppressWarnings("unchecked")
     public ResponseEntity<?> createBooking(
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth,
             @RequestBody(required = false) Map<String, Object> req
     ) {
         if (req != null && req.containsKey("holdId")) {
             AntaStore.UserRecord user = store.resolveUser(auth);
-            if (user == null) {
-                return AntaStore.unauthorized();
-            }
+            if (user == null) return AntaStore.unauthorized();
             String holdId = Objects.toString(req.get("holdId"), "");
-            AntaStore.HoldRecord hold = store.getHolds().remove(holdId);
+            AntaStore.HoldRecord hold = store.consumeHold(holdId);
             if (hold == null) {
                 return AntaStore.error(HttpStatus.NOT_FOUND, "HOLD_NOT_FOUND", "Phiên giữ sân không tồn tại hoặc đã hết hạn");
             }
@@ -92,33 +91,24 @@ public class BookingPaymentController {
                     "PENDING_PAYMENT", "APP", now, payExpires, null,
                     List.of(new AntaStore.BookingStatusEvent(now, null, "PENDING_PAYMENT", "Tạo đơn từ app Anta"))
             );
-            store.getBookings().put(bookingId, record);
+            store.saveNewBooking(record);
             return ResponseEntity.ok(Map.of("data", record.toApiMap()));
         }
 
-        // Legacy microservice lab payload compatibility
         String yardId = (req != null && req.containsKey("yardId")) ? Objects.toString(req.get("yardId")) : "yard-01";
         String slot = (req != null && req.containsKey("slot")) ? Objects.toString(req.get("slot")) : "18:00-19:00";
         long amount = (req != null && req.get("amount") instanceof Number n) ? n.longValue() : 120000L;
-        String bookingId = "ANTA-BK-" + System.currentTimeMillis();
         return ResponseEntity.ok(Map.of(
-                "bookingId", bookingId,
-                "yardId", yardId,
-                "slot", slot,
-                "amount", amount,
-                "status", "CONFIRMED"
+                "bookingId", "ANTA-BK-" + System.currentTimeMillis(),
+                "yardId", yardId, "slot", slot, "amount", amount, "status", "CONFIRMED"
         ));
     }
 
     @GetMapping({"/users/me/bookings", "/user/me/bookings"})
     public ResponseEntity<Map<String, Object>> myBookings(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
         AntaStore.UserRecord user = store.resolveUser(auth);
-        if (user == null) {
-            return AntaStore.unauthorized();
-        }
-        List<Map<String, Object>> items = store.getBookings().values().stream()
-                .filter(b -> user.id().equals(b.userId()))
-                .sorted(Comparator.comparing(AntaStore.BookingRecord::startsAt).reversed())
+        if (user == null) return AntaStore.unauthorized();
+        List<Map<String, Object>> items = store.listBookingsByUser(user.id()).stream()
                 .map(AntaStore.BookingRecord::toApiMap)
                 .toList();
         return ResponseEntity.ok(Map.of("data", Map.of("items", items)));
@@ -130,13 +120,9 @@ public class BookingPaymentController {
             @PathVariable String id
     ) {
         AntaStore.UserRecord user = store.resolveUser(auth);
-        if (user == null) {
-            return AntaStore.unauthorized();
-        }
-        AntaStore.BookingRecord b = store.getBookings().get(id);
-        if (b == null) {
-            return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy đơn đặt sân");
-        }
+        if (user == null) return AntaStore.unauthorized();
+        AntaStore.BookingRecord b = store.findBooking(id);
+        if (b == null) return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy đơn đặt sân");
         return ResponseEntity.ok(Map.of("data", b.toApiMap()));
     }
 
@@ -146,15 +132,9 @@ public class BookingPaymentController {
             @PathVariable String id
     ) {
         AntaStore.UserRecord user = store.resolveUser(auth);
-        if (user == null) {
-            return AntaStore.unauthorized();
-        }
-        AntaStore.BookingRecord b = store.getBookings().get(id);
-        if (b == null) {
-            return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy đơn đặt sân");
-        }
-        AntaStore.BookingRecord cancelled = b.withStatus("CANCELLED", "Khách hủy đơn");
-        store.getBookings().put(id, cancelled);
+        if (user == null) return AntaStore.unauthorized();
+        AntaStore.BookingRecord cancelled = store.updateBookingStatus(id, "CANCELLED", "Khách hủy đơn");
+        if (cancelled == null) return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy đơn đặt sân");
         return ResponseEntity.ok(Map.of("data", cancelled.toApiMap()));
     }
 
@@ -164,17 +144,13 @@ public class BookingPaymentController {
             @RequestBody Map<String, Object> req
     ) {
         AntaStore.UserRecord user = store.resolveUser(auth);
-        if (user == null) {
-            return AntaStore.unauthorized();
-        }
+        if (user == null) return AntaStore.unauthorized();
         String bookingId = Objects.toString(req.get("bookingId"), "");
-        AntaStore.BookingRecord booking = store.getBookings().get(bookingId);
-        if (booking == null) {
-            return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy đơn đặt sân");
-        }
+        AntaStore.BookingRecord booking = store.findBooking(bookingId);
+        if (booking == null) return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy đơn đặt sân");
+
         String intentId = "pi-" + UUID.randomUUID();
-        AntaStore.PaymentIntentRecord intent = new AntaStore.PaymentIntentRecord(intentId, bookingId, user.id(), booking.amount(), "CREATED", null, Instant.now());
-        store.getPaymentIntents().put(intentId, intent);
+        store.savePaymentIntent(new AntaStore.PaymentIntentRecord(intentId, bookingId, user.id(), booking.amount(), "CREATED", null, Instant.now()));
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("id", intentId);
@@ -191,20 +167,14 @@ public class BookingPaymentController {
             @PathVariable String intentId
     ) {
         AntaStore.UserRecord user = store.resolveUser(auth);
-        if (user == null) {
-            return AntaStore.unauthorized();
-        }
-        AntaStore.PaymentIntentRecord intent = store.getPaymentIntents().get(intentId);
-        if (intent == null) {
-            return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy giao dịch thanh toán");
-        }
-        store.getPaymentIntents().put(intentId, new AntaStore.PaymentIntentRecord(
-                intent.id(), intent.bookingId(), intent.userId(), intent.amount(), "SUCCEEDED", null, Instant.now()
+        if (user == null) return AntaStore.unauthorized();
+        AntaStore.PaymentIntentRecord intent = store.findPaymentIntent(intentId);
+        if (intent == null) return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy giao dịch thanh toán");
+
+        store.savePaymentIntent(new AntaStore.PaymentIntentRecord(
+                intent.id(), intent.bookingId(), intent.userId(), intent.amount(), "SUCCEEDED", intent.refundStatus(), Instant.now()
         ));
-        AntaStore.BookingRecord booking = store.getBookings().get(intent.bookingId());
-        if (booking != null) {
-            store.getBookings().put(booking.id(), booking.withStatus("CONFIRMED", "Thanh toán sandbox thành công"));
-        }
+        store.updateBookingStatus(intent.bookingId(), "CONFIRMED", "Thanh toán sandbox thành công");
         return ResponseEntity.ok(Map.of("data", Map.of("outcome", "SUCCEEDED")));
     }
 
@@ -214,11 +184,8 @@ public class BookingPaymentController {
         long amount = (req != null && req.get("amount") instanceof Number n) ? n.longValue() : 120000L;
         return Map.of(
                 "paymentIntentId", "PI-" + UUID.randomUUID(),
-                "bookingId", bookingId,
-                "amount", amount,
-                "currency", "VND",
-                "status", "SUCCEEDED",
-                "provider", "Sandbox-AntaPay"
+                "bookingId", bookingId, "amount", amount, "currency", "VND",
+                "status", "SUCCEEDED", "provider", "Sandbox-AntaPay"
         );
     }
 }
