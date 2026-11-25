@@ -4,8 +4,18 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
+import vn.anta.cloud.service.EmailService;
 import vn.anta.cloud.store.AntaStore;
 
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -15,15 +25,23 @@ import java.util.*;
 public class AuthUsersController {
 
     private final AntaStore store;
+    private final EmailService emailService;
+    private final ObjectMapper mapper = new ObjectMapper();
+    private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
-    public AuthUsersController(AntaStore store) {
+    public AuthUsersController(AntaStore store, EmailService emailService) {
         this.store = store;
+        this.emailService = emailService;
     }
 
     @GetMapping({"/public/config", "/config"})
     public Map<String, Object> getConfig() {
+        String googleClientId = Optional.ofNullable(System.getenv("GOOGLE_CLIENT_ID"))
+                .filter(s -> !s.isBlank())
+                .map(String::trim)
+                .orElse(null);
         Map<String, Object> cfg = new LinkedHashMap<>();
-        cfg.put("googleClientId", null);
+        cfg.put("googleClientId", googleClientId);
         cfg.put("feedbackEmail", "hotro@anta.vn");
         cfg.put("features", Map.of("sandboxPayment", true));
         return Map.of("data", cfg);
@@ -44,14 +62,19 @@ public class AuthUsersController {
     @PostMapping({"/public/auth/otp/send", "/public/auth/code", "/auth/code"})
     public Map<String, Object> sendOtp(@RequestBody(required = false) Map<String, Object> req) {
         String identifier = req != null ? Objects.toString(req.get("identifier"), "").trim() : "";
+        String purpose = req != null ? Objects.toString(req.get("purpose"), "register") : "register";
         String challengeId = "challenge-" + UUID.randomUUID();
         String code = String.format("%06d", new Random().nextInt(1_000_000));
         Instant expiresAt = Instant.now().plus(15, ChronoUnit.MINUTES);
         store.getOtpChallenges().put(challengeId, new AntaStore.OtpRecord(challengeId, identifier, code, expiresAt, null));
+
+        boolean emailed = identifier.contains("@") && emailService.sendOtpEmail(identifier, code, purpose);
+        String delivery = emailed ? "provider" : "development-only";
+
         return Map.of("data", Map.of(
                 "challengeId", challengeId,
                 "expiresAt", expiresAt.toString(),
-                "delivery", "development-only"
+                "delivery", delivery
         ));
     }
 
@@ -97,7 +120,7 @@ public class AuthUsersController {
         }
         String key = identifier.toLowerCase(Locale.ROOT);
         if (store.getUserIdByIdentifier().containsKey(key)) {
-            return AntaStore.error(HttpStatus.CONFLICT, "IDENTIFIER_TAKEN", "Tài khoản này đã được đăng ký");
+            return AntaStore.error(HttpStatus.CONFLICT, "CONFLICT", "Tài khoản này đã được đăng ký");
         }
         store.getVerificationTokens().remove(vToken);
         AntaStore.UserRecord user = store.seedUser("user-" + UUID.randomUUID().toString().substring(0, 8), identifier, displayName, password, true);
@@ -134,12 +157,40 @@ public class AuthUsersController {
     }
 
     @PostMapping({"/public/auth/social", "/auth/social"})
-    public Map<String, Object> socialLogin(@RequestBody(required = false) Map<String, Object> req) {
-        AntaStore.UserRecord user = store.getUsersById().computeIfAbsent(
-                "user-google-01",
-                id -> store.seedUser(id, "google_user@anta.vn", "VĐV Anta Sports", "", false)
-        );
-        return Map.of("data", store.issueTokenBundle(user));
+    public ResponseEntity<Map<String, Object>> socialLogin(@RequestBody(required = false) Map<String, Object> req) {
+        String idToken = req != null ? Objects.toString(req.get("idToken"), "").trim() : "";
+        String email = "google_user@anta.vn";
+        String name = "VĐV Anta Sports";
+
+        if (!idToken.isEmpty()) {
+            try {
+                String url = "https://oauth2.googleapis.com/tokeninfo?id_token=" + URLEncoder.encode(idToken, StandardCharsets.UTF_8);
+                HttpRequest request = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(10)).GET().build();
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() != 200) {
+                    return AntaStore.error(HttpStatus.UNAUTHORIZED, "INVALID_SOCIAL_TOKEN", "Google chưa xác nhận được tài khoản");
+                }
+                Map<String, Object> claims = mapper.readValue(response.body(), new TypeReference<>() {});
+                String expectedAud = System.getenv("GOOGLE_CLIENT_ID");
+                if (expectedAud != null && !expectedAud.isBlank() && !expectedAud.trim().equals(claims.get("aud"))) {
+                    return AntaStore.error(HttpStatus.UNAUTHORIZED, "INVALID_SOCIAL_TOKEN", "Token Google không khớp ứng dụng");
+                }
+                email = Objects.toString(claims.get("email"), email).trim();
+                name = Objects.toString(claims.get("name"), email).trim();
+            } catch (Exception ex) {
+                return AntaStore.error(HttpStatus.UNAUTHORIZED, "INVALID_SOCIAL_TOKEN", "Không xác minh được tài khoản Google");
+            }
+        }
+
+        String existingId = store.getUserIdByIdentifier().get(email.toLowerCase(Locale.ROOT));
+        AntaStore.UserRecord user;
+        if (existingId != null && store.getUsersById().containsKey(existingId)) {
+            user = store.getUsersById().get(existingId);
+        } else {
+            String newId = "user-gg-" + UUID.randomUUID().toString().substring(0, 8);
+            user = store.seedUser(newId, email, name, "", false);
+        }
+        return ResponseEntity.ok(Map.of("data", store.issueTokenBundle(user)));
     }
 
     @PostMapping("/public/auth/reset-password")

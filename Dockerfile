@@ -4,6 +4,7 @@ WORKDIR /build
 
 COPY cloud-app/pom.xml ./cloud-app/pom.xml
 COPY yard-service/src/main/resources/data ./yard-service/src/main/resources/data
+COPY frontend ./frontend
 RUN mvn -B -f cloud-app/pom.xml dependency:go-offline
 
 COPY cloud-app/src ./cloud-app/src

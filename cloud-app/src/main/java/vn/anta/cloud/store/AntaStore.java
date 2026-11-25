@@ -24,11 +24,24 @@ public class AntaStore {
     public static final String DEMO_USER_ID = "user-customer-01";
     public static final List<String> DEFAULT_FAVORITES = List.of();
 
-    public record UserRecord(String id, String identifier, String displayName, String password, boolean passwordLogin) {}
+    public record UserRecord(String id, String identifier, String displayName, String password, boolean passwordLogin, String status, Instant createdAt) {}
+
+    public record RoleEntry(String role, String branchId) {}
 
     public record OtpRecord(String challengeId, String identifier, String code, Instant expiresAt, String verificationToken) {}
 
     public record HoldRecord(String holdId, String userId, String yardId, String branchId, Instant startsAt, Instant endsAt, long total, Instant expiresAt) {}
+
+    public record BookingStatusEvent(Instant createdAt, String fromStatus, String toStatus, String reason) {
+        public Map<String, Object> toMap() {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("created_at", createdAt.toString());
+            m.put("from_status", fromStatus);
+            m.put("to_status", toStatus);
+            m.put("reason", reason);
+            return m;
+        }
+    }
 
     public record BookingRecord(
             String id,
@@ -39,17 +52,25 @@ public class AntaStore {
             String branchAddress,
             String branchImage,
             String yardName,
+            String sportName,
             String branchTimezone,
             Instant startsAt,
             Instant endsAt,
+            long hourlyPrice,
             long amount,
             String status,
+            String source,
+            Instant createdAt,
             Instant paymentExpiresAt,
-            Instant confirmDeadlineAt
+            Instant confirmDeadlineAt,
+            List<BookingStatusEvent> statusHistory
     ) {
-        public BookingRecord withStatus(String nextStatus) {
+        public BookingRecord withStatus(String nextStatus, String reason) {
+            List<BookingStatusEvent> history = new ArrayList<>(statusHistory != null ? statusHistory : List.of());
+            history.add(new BookingStatusEvent(Instant.now(), status, nextStatus, reason));
             return new BookingRecord(id, userId, branchId, yardId, branchName, branchAddress, branchImage, yardName,
-                    branchTimezone, startsAt, endsAt, amount, nextStatus, paymentExpiresAt, confirmDeadlineAt);
+                    sportName, branchTimezone, startsAt, endsAt, hourlyPrice, amount, nextStatus, source, createdAt,
+                    paymentExpiresAt, confirmDeadlineAt, List.copyOf(history));
         }
 
         public Map<String, Object> toApiMap() {
@@ -71,16 +92,39 @@ public class AntaStore {
         }
     }
 
-    public record PaymentIntentRecord(String id, String bookingId, String userId, long amount, String status) {}
+    public record PaymentIntentRecord(String id, String bookingId, String userId, long amount, String status, String refundStatus, Instant updatedAt) {
+        public PaymentIntentRecord withRefund(String nextRefundStatus) {
+            return new PaymentIntentRecord(id, bookingId, userId, amount, status, nextRefundStatus, Instant.now());
+        }
+    }
+
+    public record BlockRecord(String id, String branchId, String yardId, Instant startsAt, Instant endsAt, String reason) {
+        public Map<String, Object> toMap() {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", id);
+            m.put("branch_id", branchId);
+            m.put("yard_id", yardId);
+            m.put("starts_at", startsAt.toString());
+            m.put("ends_at", endsAt.toString());
+            m.put("reason", reason);
+            return m;
+        }
+    }
+
+    public record RefundRecord(String id, String orderCode, String provider, long amount, int percent, String reason, String status, String providerRef, Instant createdAt) {}
+
+    public record AuditEventRecord(long id, Instant createdAt, String actorId, String action, String targetType, String targetId, Map<String, Object> details) {}
 
     private List<Map<String, Object>> sports = List.of();
     private List<Map<String, Object>> branches = List.of();
+    private final Map<String, String> sportNameById = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>> branchIndex = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>> yardToBranch = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>> yardIndex = new ConcurrentHashMap<>();
 
     private final Map<String, UserRecord> usersById = new ConcurrentHashMap<>();
     private final Map<String, String> userIdByIdentifier = new ConcurrentHashMap<>();
+    private final Map<String, List<RoleEntry>> rolesByUser = new ConcurrentHashMap<>();
     private final Set<String> revokedTokens = ConcurrentHashMap.newKeySet();
     private final Map<String, OtpRecord> otpChallenges = new ConcurrentHashMap<>();
     private final Map<String, String> verificationTokens = new ConcurrentHashMap<>();
@@ -88,8 +132,13 @@ public class AntaStore {
     private final Map<String, HoldRecord> holds = new ConcurrentHashMap<>();
     private final Map<String, BookingRecord> bookings = new ConcurrentHashMap<>();
     private final Map<String, PaymentIntentRecord> paymentIntents = new ConcurrentHashMap<>();
+    private final Map<String, BlockRecord> blocks = new ConcurrentHashMap<>();
+    private final Map<String, RefundRecord> refunds = new ConcurrentHashMap<>();
+    private final List<AuditEventRecord> auditEvents = new CopyOnWriteArrayList<>();
+    private final List<Map<String, Object>> deletionRequests = new CopyOnWriteArrayList<>();
     private final Map<String, Map<String, Object>> mediaStore = new ConcurrentHashMap<>();
     private final ObjectMapper mapper = new ObjectMapper();
+    private final java.util.concurrent.atomic.AtomicLong auditSeq = new java.util.concurrent.atomic.AtomicLong(1);
     private final String tokenSecret = Optional.ofNullable(System.getenv("TOKEN_SECRET"))
             .filter(s -> !s.isBlank())
             .orElse("anta-cloud-demo-signing-secret-2026");
@@ -110,6 +159,11 @@ public class AntaStore {
                         branches = (List<Map<String, Object>>) b;
                     }
                 }
+            }
+            for (Map<String, Object> s : sports) {
+                String sid = Objects.toString(s.get("id"), "");
+                String sname = Objects.toString(s.get("name"), sid);
+                if (!sid.isBlank()) sportNameById.put(sid, sname);
             }
             for (Map<String, Object> branch : branches) {
                 putKey(branchIndex, branch.get("id"), branch);
@@ -134,6 +188,45 @@ public class AntaStore {
         seedUser(DEMO_USER_ID, "customer@anta.vn", "Nguyễn Văn Khách", "anta123456", true);
         seedUser("user-owner-01", "owner@anta.vn", "Trần Minh Tâm (Chủ Sân)", "anta123456", true);
         seedUser("user-admin-01", "admin@anta.vn", "Quản Trị Viên Sàn", "anta123456", true);
+
+        grantRole("user-admin-01", "admin", null);
+        for (int i = 0; i < Math.min(5, branches.size()); i++) {
+            grantRole("user-owner-01", "branch_owner", Objects.toString(branches.get(i).get("id"), null));
+        }
+
+        seedSampleBookings();
+    }
+
+    private void seedSampleBookings() {
+        if (branches.isEmpty()) return;
+        Map<String, Object> branch = branches.get(0);
+        String branchId = Objects.toString(branch.get("id"), "branch-01");
+        String branchName = Objects.toString(branch.get("name"), "Sân Anta");
+        String branchAddress = Objects.toString(branch.get("address"), "");
+        String branchTimezone = Objects.toString(branch.get("timezone"), "Asia/Ho_Chi_Minh");
+        String branchImage = (branch.get("images") instanceof List<?> imgs && !imgs.isEmpty()) ? Objects.toString(imgs.get(0), null) : null;
+        String yardId = "yard-demo-1";
+        String yardName = "Sân 1";
+        String sportName = "Pickleball";
+        long price = 150000L;
+        if (branch.get("yards") instanceof List<?> yards && !yards.isEmpty() && yards.get(0) instanceof Map<?, ?> y) {
+            yardId = Objects.toString(y.get("id"), yardId);
+            yardName = Objects.toString(y.get("name"), yardName);
+            sportName = sportNameById.getOrDefault(Objects.toString(y.get("sport_id"), ""), "Thể thao");
+            price = longVal(y.get("hourly_price"), 150000L);
+        }
+        Instant baseStart = java.time.LocalDate.now(java.time.ZoneId.of(branchTimezone))
+                .atTime(18, 0).atZone(java.time.ZoneId.of(branchTimezone)).toInstant();
+        BookingRecord b1 = new BookingRecord(
+                "ANTA-BK-DEMO01", DEMO_USER_ID, branchId, yardId, branchName, branchAddress, branchImage,
+                yardName, sportName, branchTimezone, baseStart, baseStart.plusSeconds(3600),
+                price, price, "PENDING_OWNER_CONFIRMATION", "APP", Instant.now().minusSeconds(1800),
+                null, Instant.now().plusSeconds(3600 * 6),
+                List.of(new BookingStatusEvent(Instant.now().minusSeconds(1800), "PENDING_PAYMENT", "PENDING_OWNER_CONFIRMATION", "Khách đã thanh toán"))
+        );
+        bookings.put(b1.id(), b1);
+        paymentIntents.put("pi-demo-01", new PaymentIntentRecord("pi-demo-01", b1.id(), DEMO_USER_ID, price, "SUCCEEDED", null, Instant.now().minusSeconds(1800)));
+        recordAudit("user-admin-01", "system.bootstrap", "branch", branchId, Map.of("note", "Khởi tạo dữ liệu mẫu trên Cloud"));
     }
 
     private static void putKey(Map<String, Map<String, Object>> map, Object key, Map<String, Object> val) {
@@ -144,10 +237,41 @@ public class AntaStore {
 
     public UserRecord seedUser(String id, String identifier, String displayName, String password, boolean passwordLogin) {
         String normalized = identifier.trim().toLowerCase();
-        UserRecord user = new UserRecord(id, identifier.trim(), displayName, password, passwordLogin);
+        UserRecord existing = usersById.get(id);
+        Instant createdAt = existing != null ? existing.createdAt() : Instant.now();
+        UserRecord user = new UserRecord(id, identifier.trim(), displayName, password, passwordLogin, "ACTIVE", createdAt);
         usersById.put(id, user);
         userIdByIdentifier.put(normalized, id);
         return user;
+    }
+
+    public List<RoleEntry> rolesFor(String userId) {
+        return rolesByUser.computeIfAbsent(userId, k -> new CopyOnWriteArrayList<>());
+    }
+
+    public boolean hasRole(String userId, String role) {
+        return rolesFor(userId).stream().anyMatch(r -> role.equalsIgnoreCase(r.role()));
+    }
+
+    public void grantRole(String userId, String role, String branchId) {
+        List<RoleEntry> list = rolesFor(userId);
+        RoleEntry entry = new RoleEntry(role, branchId != null && !branchId.isBlank() ? branchId : null);
+        if (!list.contains(entry)) {
+            list.add(entry);
+        }
+    }
+
+    public void revokeRole(String userId, String role, String branchId) {
+        String targetBranch = (branchId != null && !branchId.isBlank()) ? branchId : null;
+        rolesFor(userId).removeIf(r -> role.equalsIgnoreCase(r.role()) && Objects.equals(targetBranch, r.branchId()));
+    }
+
+    public void recordAudit(String actorId, String action, String targetType, String targetId, Map<String, Object> details) {
+        auditEvents.add(0, new AuditEventRecord(auditSeq.getAndIncrement(), Instant.now(), actorId, action, targetType, targetId, details != null ? details : Map.of()));
+    }
+
+    public String sportName(String sportId) {
+        return sportNameById.getOrDefault(sportId, "Thể thao");
     }
 
     public List<Map<String, Object>> getSports() { return sports; }
@@ -164,6 +288,10 @@ public class AntaStore {
     public Map<String, HoldRecord> getHolds() { return holds; }
     public Map<String, BookingRecord> getBookings() { return bookings; }
     public Map<String, PaymentIntentRecord> getPaymentIntents() { return paymentIntents; }
+    public Map<String, BlockRecord> getBlocks() { return blocks; }
+    public Map<String, RefundRecord> getRefunds() { return refunds; }
+    public List<AuditEventRecord> getAuditEvents() { return auditEvents; }
+    public List<Map<String, Object>> getDeletionRequests() { return deletionRequests; }
     public Map<String, Map<String, Object>> getMediaStore() { return mediaStore; }
 
     public List<String> favoriteIds(String userId) {

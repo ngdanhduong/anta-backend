@@ -79,14 +79,18 @@ public class BookingPaymentController {
                 branchImage = Objects.toString(imgs.get(0), null);
             }
             String yardName = yard != null ? Objects.toString(yard.get("name"), "Sân 1") : "Sân 1";
+            String sportName = yard != null ? store.sportName(Objects.toString(yard.get("sport_id"), "")) : "Thể thao";
+            long hourlyPrice = yard != null ? AntaStore.longVal(yard.get("hourly_price"), 150000L) : 150000L;
 
             String bookingId = "ANTA-BK-" + UUID.randomUUID().toString().substring(0, 8);
-            Instant payExpires = Instant.now().plus(15, ChronoUnit.MINUTES);
+            Instant now = Instant.now();
+            Instant payExpires = now.plus(15, ChronoUnit.MINUTES);
             AntaStore.BookingRecord record = new AntaStore.BookingRecord(
                     bookingId, user.id(), hold.branchId(), hold.yardId(),
-                    branchName, branchAddress, branchImage, yardName, branchTimezone,
-                    hold.startsAt(), hold.endsAt(), hold.total(),
-                    "PENDING_PAYMENT", payExpires, null
+                    branchName, branchAddress, branchImage, yardName, sportName, branchTimezone,
+                    hold.startsAt(), hold.endsAt(), hourlyPrice, hold.total(),
+                    "PENDING_PAYMENT", "APP", now, payExpires, null,
+                    List.of(new AntaStore.BookingStatusEvent(now, null, "PENDING_PAYMENT", "Tạo đơn từ app Anta"))
             );
             store.getBookings().put(bookingId, record);
             return ResponseEntity.ok(Map.of("data", record.toApiMap()));
@@ -149,7 +153,7 @@ public class BookingPaymentController {
         if (b == null) {
             return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy đơn đặt sân");
         }
-        AntaStore.BookingRecord cancelled = b.withStatus("CANCELLED");
+        AntaStore.BookingRecord cancelled = b.withStatus("CANCELLED", "Khách hủy đơn");
         store.getBookings().put(id, cancelled);
         return ResponseEntity.ok(Map.of("data", cancelled.toApiMap()));
     }
@@ -169,7 +173,7 @@ public class BookingPaymentController {
             return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy đơn đặt sân");
         }
         String intentId = "pi-" + UUID.randomUUID();
-        AntaStore.PaymentIntentRecord intent = new AntaStore.PaymentIntentRecord(intentId, bookingId, user.id(), booking.amount(), "CREATED");
+        AntaStore.PaymentIntentRecord intent = new AntaStore.PaymentIntentRecord(intentId, bookingId, user.id(), booking.amount(), "CREATED", null, Instant.now());
         store.getPaymentIntents().put(intentId, intent);
 
         Map<String, Object> data = new LinkedHashMap<>();
@@ -195,11 +199,11 @@ public class BookingPaymentController {
             return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy giao dịch thanh toán");
         }
         store.getPaymentIntents().put(intentId, new AntaStore.PaymentIntentRecord(
-                intent.id(), intent.bookingId(), intent.userId(), intent.amount(), "SUCCEEDED"
+                intent.id(), intent.bookingId(), intent.userId(), intent.amount(), "SUCCEEDED", null, Instant.now()
         ));
         AntaStore.BookingRecord booking = store.getBookings().get(intent.bookingId());
         if (booking != null) {
-            store.getBookings().put(booking.id(), booking.withStatus("CONFIRMED"));
+            store.getBookings().put(booking.id(), booking.withStatus("CONFIRMED", "Thanh toán sandbox thành công"));
         }
         return ResponseEntity.ok(Map.of("data", Map.of("outcome", "SUCCEEDED")));
     }
