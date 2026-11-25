@@ -130,7 +130,8 @@ public class GatewayRoutingController {
             return "AUTH-SERVICE";
         }
         if (path.startsWith("/api/v1/yards") || path.startsWith("/api/v1/public/branches") ||
-            path.startsWith("/api/v1/public/sports")) {
+            path.startsWith("/api/v1/public/sports") || path.startsWith("/api/v1/branches") ||
+            path.startsWith("/api/v1/sports") || path.startsWith("/api/v1/media")) {
             return "YARD-SERVICE";
         }
         if (path.startsWith("/api/v1/bookings")) {

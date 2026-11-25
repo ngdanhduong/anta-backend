@@ -88,7 +88,7 @@ public class AuthController {
     // Xác minh mã OTP (POST /public/auth/verify, POST /public/auth/otp/verify)
     @PostMapping(value = {"/public/auth/verify", "/public/auth/otp/verify", "/auth/verify"})
     public Map<String, Object> verifyCode(@RequestBody(required = false) Map<String, Object> req) {
-        return Map.of("data", "verify-token-" + UUID.randomUUID().toString().substring(0, 12));
+        return Map.of("data", Map.of("verificationToken", "verify-token-" + UUID.randomUUID().toString().substring(0, 12)));
     }
 
     // Đăng nhập mật khẩu / OTP (POST /public/auth/login)
