@@ -123,3 +123,15 @@ CREATE TABLE IF NOT EXISTS audit_events (
     target_id VARCHAR(128) NOT NULL,
     details_json TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS media_assets (
+    id VARCHAR(64) PRIMARY KEY,
+    branch_id VARCHAR(64) NOT NULL,
+    blob_path VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(128) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    url TEXT NOT NULL,
+    created_at_ms BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_media_assets_branch ON media_assets(branch_id, status, created_at_ms);

@@ -3,8 +3,10 @@ package vn.anta.cloud.controller;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import vn.anta.cloud.service.AzureBlobStorageService;
 import vn.anta.cloud.store.AntaStore;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -16,9 +18,11 @@ import java.util.*;
 public class CatalogController {
 
     private final AntaStore store;
+    private final AzureBlobStorageService blobService;
 
-    public CatalogController(AntaStore store) {
+    public CatalogController(AntaStore store, AzureBlobStorageService blobService) {
         this.store = store;
+        this.blobService = blobService;
     }
 
     @GetMapping({"/public/sports", "/sports"})
@@ -82,7 +86,7 @@ public class CatalogController {
         if (branch == null) {
             return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy cơ sở: " + id);
         }
-        return ResponseEntity.ok(Map.of("data", branch));
+        return ResponseEntity.ok(Map.of("data", store.enrichBranchImages(branch)));
     }
 
     @GetMapping({"/public/branches/{id}/services", "/branches/{id}/services"})
@@ -179,39 +183,72 @@ public class CatalogController {
 
     private Map<String, Object> createPresignResponse(String branchId, Map<String, Object> req) {
         String uploadId = UUID.randomUUID().toString();
-        String mimeType = (req != null && req.get("mimeType") != null) ? req.get("mimeType").toString() : "image/jpeg";
-        store.getMediaStore().put(uploadId, new LinkedHashMap<>(Map.of(
-                "id", uploadId, "branch_id", branchId, "mime_type", mimeType, "status", "CLEAN",
-                "url", "https://m-files.alobo.vn/branch/sport_pickleball_hoang_minh/main/cover-1753288232890-thumb.jpg"
-        )));
-        return Map.of("data", Map.of(
-                "uploadId", uploadId, "method", "PUT",
-                "url", "https://m-files.alobo.vn/upload/" + uploadId,
-                "headers", Map.of("Content-Type", mimeType),
-                "expiresIn", 120, "status", "PENDING"
-        ));
+        String mimeType = (req != null && req.get("mimeType") != null) ? req.get("mimeType").toString().trim() : "image/jpeg";
+        String ext = switch (mimeType.toLowerCase(Locale.ROOT)) {
+            case "image/png" -> ".png";
+            case "image/webp" -> ".webp";
+            default -> ".jpg";
+        };
+        String safeBranch = branchId.replaceAll("[^a-zA-Z0-9_-]", "_");
+        String blobPath = "uploads/" + safeBranch + "/" + uploadId + ext;
+
+        String uploadUrl;
+        String publicUrl;
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("Content-Type", mimeType);
+
+        if (blobService.isConfigured()) {
+            uploadUrl = blobService.createUploadSasUrl(blobPath, Duration.ofMinutes(15));
+            publicUrl = blobService.publicUrl(blobPath);
+            headers.put("x-ms-blob-type", "BlockBlob");
+            store.saveMediaAsset(uploadId, branchId, blobPath, mimeType, "PENDING", publicUrl);
+        } else {
+            publicUrl = "https://antamedia2026.blob.core.windows.net/media/catalog/branch/sport_pickleball_hoang_minh/main/cover-1753288232890-thumb.jpg";
+            uploadUrl = publicUrl;
+            store.saveMediaAsset(uploadId, branchId, blobPath, mimeType, "PENDING", publicUrl);
+        }
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("uploadId", uploadId);
+        data.put("method", "PUT");
+        data.put("url", uploadUrl);
+        data.put("publicUrl", publicUrl);
+        data.put("headers", headers);
+        data.put("expiresIn", 900);
+        data.put("status", "PENDING");
+        return Map.of("data", data);
     }
 
     @GetMapping("/media/{id}")
-    public Map<String, Object> getMedia(@PathVariable String id) {
-        Map<String, Object> media = store.getMediaStore().getOrDefault(id, Map.of(
-                "id", id, "status", "CLEAN", "mime_type", "image/jpeg",
-                "url", "https://m-files.alobo.vn/branch/sport_pickleball_hoang_minh/main/cover-1753288232890-thumb.jpg"
-        ));
-        return Map.of("data", media);
+    public ResponseEntity<Map<String, Object>> getMedia(@PathVariable String id) {
+        AntaStore.MediaAssetRecord media = store.findMediaAsset(id);
+        if (media == null) {
+            return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy tệp ảnh");
+        }
+        return ResponseEntity.ok(Map.of("data", media.toApiMap()));
     }
 
     @PostMapping("/media/{id}/complete")
-    public Map<String, Object> completeUpload(@PathVariable String id) {
-        Map<String, Object> media = store.getMediaStore().get(id);
-        if (media != null) media.put("status", "CLEAN");
-        return Map.of("data", Map.of("uploadId", id, "status", "CLEAN"));
+    public ResponseEntity<Map<String, Object>> completeUpload(@PathVariable String id) {
+        AntaStore.MediaAssetRecord media = store.findMediaAsset(id);
+        if (media == null) {
+            return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy phiên tải ảnh");
+        }
+        if (blobService.isConfigured() && !blobService.blobExists(media.blobPath())) {
+            return AntaStore.error(HttpStatus.BAD_REQUEST, "UPLOAD_NOT_FOUND", "Ảnh chưa được tải lên Azure Blob Storage");
+        }
+        store.markMediaClean(id);
+        return ResponseEntity.ok(Map.of("data", Map.of("uploadId", id, "status", "CLEAN", "url", media.url())));
     }
 
     @DeleteMapping("/branches/{branchId}/images/{uploadId}")
-    public Map<String, Object> archiveImage(@PathVariable String branchId, @PathVariable String uploadId) {
-        store.getMediaStore().remove(uploadId);
-        return Map.of("data", Map.of("archived", true));
+    public ResponseEntity<Map<String, Object>> archiveImage(@PathVariable String branchId, @PathVariable String uploadId) {
+        AntaStore.MediaAssetRecord media = store.findMediaAsset(uploadId);
+        if (media != null && blobService.isConfigured()) {
+            blobService.deleteBlob(media.blobPath());
+        }
+        store.deleteMediaAsset(uploadId);
+        return ResponseEntity.ok(Map.of("data", Map.of("archived", true)));
     }
 
     @SuppressWarnings("unchecked")

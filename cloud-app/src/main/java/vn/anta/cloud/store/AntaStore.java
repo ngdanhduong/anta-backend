@@ -106,7 +106,6 @@ public class AntaStore {
     private final Map<String, Map<String, Object>> branchIndex = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>> yardToBranch = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>> yardIndex = new ConcurrentHashMap<>();
-    private final Map<String, Map<String, Object>> mediaStore = new ConcurrentHashMap<>();
 
     private final RowMapper<UserRecord> userRowMapper = (rs, i) -> new UserRecord(
             rs.getString("id"), rs.getString("identifier"), rs.getString("display_name"),
@@ -210,7 +209,82 @@ public class AntaStore {
     public Map<String, Object> findYard(String yardId) { return yardIndex.get(yardId); }
     public Map<String, Object> findBranchByYard(String yardId) { return yardToBranch.get(yardId); }
     public String sportName(String sportId) { return sportNameById.getOrDefault(sportId, "Thể thao"); }
-    public Map<String, Map<String, Object>> getMediaStore() { return mediaStore; }
+
+    // ---- Media Assets ----
+
+    public record MediaAssetRecord(String id, String branchId, String blobPath, String mimeType, String status, String url, Instant createdAt) {
+        public Map<String, Object> toApiMap() {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", id);
+            m.put("branch_id", branchId);
+            m.put("mime_type", mimeType);
+            m.put("status", status);
+            m.put("url", url);
+            return m;
+        }
+    }
+
+    public void saveMediaAsset(String id, String branchId, String blobPath, String mimeType, String status, String url) {
+        long now = Instant.now().toEpochMilli();
+        int updated = jdbc.update(
+                "UPDATE media_assets SET branch_id = ?, blob_path = ?, mime_type = ?, status = ?, url = ? WHERE id = ?",
+                branchId, blobPath, mimeType, status, url, id
+        );
+        if (updated == 0) {
+            jdbc.update(
+                    "INSERT INTO media_assets(id, branch_id, blob_path, mime_type, status, url, created_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    id, branchId, blobPath, mimeType, status, url, now
+            );
+        }
+    }
+
+    public MediaAssetRecord findMediaAsset(String id) {
+        List<MediaAssetRecord> list = jdbc.query(
+                "SELECT id, branch_id, blob_path, mime_type, status, url, created_at_ms FROM media_assets WHERE id = ?",
+                (rs, i) -> new MediaAssetRecord(
+                        rs.getString("id"), rs.getString("branch_id"), rs.getString("blob_path"),
+                        rs.getString("mime_type"), rs.getString("status"), rs.getString("url"),
+                        Instant.ofEpochMilli(rs.getLong("created_at_ms"))
+                ),
+                id
+        );
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    public void markMediaClean(String id) {
+        jdbc.update("UPDATE media_assets SET status = 'CLEAN' WHERE id = ?", id);
+    }
+
+    public void deleteMediaAsset(String id) {
+        jdbc.update("DELETE FROM media_assets WHERE id = ?", id);
+    }
+
+    public List<String> listBranchCleanMediaUrls(String branchId) {
+        return jdbc.query(
+                "SELECT url FROM media_assets WHERE branch_id = ? AND status = 'CLEAN' ORDER BY created_at_ms DESC",
+                (rs, i) -> rs.getString("url"),
+                branchId
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> enrichBranchImages(Map<String, Object> branch) {
+        if (branch == null) return null;
+        String branchId = Objects.toString(branch.get("id"), "");
+        List<String> extra = branchId.isEmpty() ? List.of() : listBranchCleanMediaUrls(branchId);
+        if (extra.isEmpty()) return branch;
+
+        Map<String, Object> copy = new LinkedHashMap<>(branch);
+        List<String> merged = new ArrayList<>(extra);
+        if (branch.get("images") instanceof List<?> existing) {
+            for (Object item : existing) {
+                String u = Objects.toString(item, "");
+                if (!u.isBlank() && !merged.contains(u)) merged.add(u);
+            }
+        }
+        copy.put("images", merged);
+        return copy;
+    }
 
     // ---- Users & Password Hashing ----
 
@@ -745,7 +819,7 @@ public class AntaStore {
     }
 
     public Map<String, Object> branchWithDistance(Map<String, Object> branch, double userLat, double userLng) {
-        Map<String, Object> copy = new LinkedHashMap<>(branch);
+        Map<String, Object> copy = new LinkedHashMap<>(enrichBranchImages(branch));
         double bLat = number(branch.get("lat"), userLat);
         double bLng = number(branch.get("lng"), userLng);
         double dist = haversineMeters(userLat, userLng, bLat, bLng);
