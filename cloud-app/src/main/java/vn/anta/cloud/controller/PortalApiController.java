@@ -61,6 +61,7 @@ public class PortalApiController {
         stats.put("openRefunds", openRefunds);
         stats.put("latePaymentsToReview", latePayments);
         stats.put("pendingDeletions", 0);
+        stats.put("pendingBranchSubmissions", store.countPendingSubmissions());
         return ResponseEntity.ok(Map.of("data", stats));
     }
 
@@ -260,7 +261,241 @@ public class PortalApiController {
         return ResponseEntity.ok(Map.of("data", rows));
     }
 
+    @GetMapping("/admin/submissions")
+    public ResponseEntity<Map<String, Object>> adminSubmissions(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth,
+            @RequestParam(required = false) String status
+    ) {
+        if (requireAdmin(auth) == null) return adminDenied(auth);
+        List<Map<String, Object>> rows = store.listSubmissions(status).stream()
+                .map(this::toSubmissionMap)
+                .toList();
+        return ResponseEntity.ok(Map.of("data", rows));
+    }
+
+    @PostMapping("/admin/submissions/{id}/approve")
+    public ResponseEntity<Map<String, Object>> adminApproveSubmission(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth,
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, Object> req
+    ) {
+        AntaStore.UserRecord admin = requireAdmin(auth);
+        if (admin == null) return adminDenied(auth);
+        String note = req != null && req.get("note") != null ? Objects.toString(req.get("note"), "").trim() : "Đã duyệt đưa lên hệ thống";
+        try {
+            Map<String, Object> res = store.approveBranchSubmission(id, admin.id(), note.isEmpty() ? "Đã duyệt đưa lên hệ thống" : note);
+            return ResponseEntity.ok(Map.of("data", res));
+        } catch (IllegalArgumentException ex) {
+            return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy hồ sơ đăng ký sân");
+        } catch (IllegalStateException ex) {
+            return AntaStore.error(HttpStatus.CONFLICT, "CONFLICT", ex.getMessage());
+        }
+    }
+
+    @PostMapping("/admin/submissions/{id}/reject")
+    public ResponseEntity<Map<String, Object>> adminRejectSubmission(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth,
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, Object> req
+    ) {
+        AntaStore.UserRecord admin = requireAdmin(auth);
+        if (admin == null) return adminDenied(auth);
+        String reason = req != null ? Objects.toString(req.get("reason"), "").trim() : "";
+        if (reason.isEmpty()) {
+            return AntaStore.error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Vui lòng nhập lý do từ chối");
+        }
+        try {
+            store.rejectBranchSubmission(id, admin.id(), reason);
+            return ResponseEntity.ok(Map.of("data", Map.of("id", id, "status", "REJECTED")));
+        } catch (IllegalArgumentException ex) {
+            return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy hồ sơ đăng ký sân");
+        } catch (IllegalStateException ex) {
+            return AntaStore.error(HttpStatus.CONFLICT, "CONFLICT", ex.getMessage());
+        }
+    }
+
     // ---- Owner Portal ----
+
+    @GetMapping("/owner/submissions")
+    public ResponseEntity<Map<String, Object>> ownerSubmissions(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
+        AntaStore.UserRecord user = store.resolveUser(auth);
+        if (user == null) return AntaStore.unauthorized();
+        List<Map<String, Object>> rows = store.listSubmissionsByOwner(user.id()).stream()
+                .map(this::toSubmissionMap)
+                .toList();
+        return ResponseEntity.ok(Map.of("data", rows));
+    }
+
+    @PostMapping("/owner/submissions")
+    @SuppressWarnings("unchecked")
+    public ResponseEntity<Map<String, Object>> createOwnerSubmission(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth,
+            @RequestBody(required = false) Map<String, Object> req
+    ) {
+        AntaStore.UserRecord user = store.resolveUser(auth);
+        if (user == null) return AntaStore.unauthorized();
+        if (req == null) return AntaStore.error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Thiếu thông tin đăng ký sân");
+
+        String type = Objects.toString(req.get("submissionType"), "NEW_BRANCH").trim().toUpperCase(Locale.ROOT);
+        if (!"NEW_BRANCH".equals(type) && !"ADD_YARDS".equals(type)) {
+            return AntaStore.error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Loại đăng ký không hợp lệ");
+        }
+
+        String targetBranchId = req.get("targetBranchId") != null ? Objects.toString(req.get("targetBranchId"), "").trim() : null;
+        if ("ADD_YARDS".equals(type)) {
+            if (targetBranchId == null || targetBranchId.isEmpty()) {
+                return AntaStore.error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Vui lòng chọn cơ sở muốn thêm sân");
+            }
+            if (!canManageBranch(user, targetBranchId)) {
+                return AntaStore.error(HttpStatus.FORBIDDEN, "FORBIDDEN", "Bạn không có quyền quản lý cơ sở này");
+            }
+            Map<String, Object> target = store.findBranch(targetBranchId);
+            if (target == null) {
+                return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy cơ sở");
+            }
+        }
+
+        String name = Objects.toString(req.get("name"), "").trim();
+        String address = Objects.toString(req.get("address"), "").trim();
+        if ("ADD_YARDS".equals(type)) {
+            Map<String, Object> target = store.findBranch(targetBranchId);
+            if (name.isEmpty()) name = Objects.toString(target.get("name"), "Cơ sở Anta");
+            if (address.isEmpty()) address = Objects.toString(target.get("address"), "");
+        }
+        if (name.isEmpty() || address.isEmpty()) {
+            return AntaStore.error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Vui lòng nhập đầy đủ tên cơ sở và địa chỉ");
+        }
+
+        double lat = AntaStore.number(req.get("lat"), 10.7721);
+        double lng = AntaStore.number(req.get("lng"), 106.6951);
+        int openHour = (int) AntaStore.longVal(req.get("openingHour"), 6);
+        int closeHour = (int) AntaStore.longVal(req.get("closingHour"), 22);
+        if (openHour < 0 || openHour > 23 || closeHour <= openHour || closeHour > 24) {
+            return AntaStore.error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Giờ mở cửa và đóng cửa không hợp lệ");
+        }
+
+        String description = Objects.toString(req.get("description"), "").trim();
+        List<String> rules = new ArrayList<>();
+        if (req.get("rules") instanceof List<?> rawRules) {
+            for (Object r : rawRules) {
+                String txt = Objects.toString(r, "").trim();
+                if (!txt.isEmpty()) rules.add(txt);
+            }
+        }
+        if (rules.isEmpty() && "NEW_BRANCH".equals(type)) {
+            rules.add("Vui lòng có mặt trước giờ chơi 10 phút để nhận sân");
+            rules.add("Mang giày thể thao phù hợp mặt sân");
+        }
+
+        List<String> images = new ArrayList<>();
+        if (req.get("images") instanceof List<?> rawImages) {
+            for (Object img : rawImages) {
+                String u = Objects.toString(img, "").trim();
+                if (u.startsWith("https://") || u.startsWith("http://")) images.add(u);
+            }
+        }
+
+        List<AntaStore.SubmissionYardInput> yards = new ArrayList<>();
+        if (req.get("yards") instanceof List<?> rawYards) {
+            for (Object yObj : rawYards) {
+                if (yObj instanceof Map<?, ?> ym) {
+                    String yName = Objects.toString(ym.get("name"), "").trim();
+                    String sportId = Objects.toString(ym.get("sportId"), "sp-pickleball").trim();
+                    long price = AntaStore.longVal(ym.get("hourlyPrice"), 0L);
+                    if (!yName.isEmpty() && price >= 10000L) {
+                        yards.add(new AntaStore.SubmissionYardInput(yName, sportId, price));
+                    }
+                }
+            }
+        }
+        if (yards.isEmpty()) {
+            return AntaStore.error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Cần ít nhất 1 sân con với tên sân và giá theo giờ tối thiểu 10.000 đ");
+        }
+
+        String subId = "sub-" + UUID.randomUUID().toString().substring(0, 8);
+        AntaStore.BranchSubmissionRecord created = store.saveBranchSubmission(new AntaStore.BranchSubmissionRecord(
+                subId, type, targetBranchId, user.id(), name, address, lat, lng,
+                openHour, closeHour, description, rules, images, yards,
+                "PENDING", null, null, Instant.now(), null
+        ));
+        store.recordAudit(user.id(), "branch_submission.create", "branch_submission", subId,
+                Map.of("type", type, "name", name, "yardCount", yards.size()));
+        return ResponseEntity.ok(Map.of("data", toSubmissionMap(created)));
+    }
+
+    @GetMapping("/owner/branches/{branchId}/courts")
+    @SuppressWarnings("unchecked")
+    public ResponseEntity<Map<String, Object>> ownerBranchCourts(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth,
+            @PathVariable String branchId
+    ) {
+        AntaStore.UserRecord user = store.resolveUser(auth);
+        if (user == null) return AntaStore.unauthorized();
+        if (!canManageBranch(user, branchId)) return AntaStore.error(HttpStatus.FORBIDDEN, "FORBIDDEN", "Bạn không có quyền quản lý cơ sở này");
+        Map<String, Object> branch = store.findBranch(branchId);
+        if (branch == null) return AntaStore.error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy cơ sở");
+
+        List<Map<String, Object>> courts = new ArrayList<>();
+        if (branch.get("yards") instanceof List<?> rawYards) {
+            for (Object yObj : rawYards) {
+                if (yObj instanceof Map<?, ?> y) {
+                    String sid = Objects.toString(y.get("sport_id"), "");
+                    courts.add(Map.of(
+                            "id", Objects.toString(y.get("id"), ""),
+                            "name", Objects.toString(y.get("name"), "Sân"),
+                            "sport_id", sid,
+                            "sport_name", store.sportName(sid),
+                            "hourly_price", AntaStore.longVal(y.get("hourly_price"), 150000L)
+                    ));
+                }
+            }
+        }
+        List<Map<String, Object>> pendingAdditions = store.listSubmissionsByOwner(user.id()).stream()
+                .filter(s -> "ADD_YARDS".equals(s.submissionType()) && branchId.equals(s.targetBranchId()))
+                .map(this::toSubmissionMap)
+                .toList();
+        return ResponseEntity.ok(Map.of("data", Map.of(
+                "branch", Map.of("id", Objects.toString(branch.get("id"), branchId), "name", Objects.toString(branch.get("name"), ""), "address", Objects.toString(branch.get("address"), "")),
+                "courts", courts,
+                "submissions", pendingAdditions
+        )));
+    }
+
+    private Map<String, Object> toSubmissionMap(AntaStore.BranchSubmissionRecord s) {
+        AntaStore.UserRecord owner = store.findUserById(s.ownerUserId());
+        Map<String, Object> targetBranch = s.targetBranchId() != null ? store.findBranch(s.targetBranchId()) : null;
+        List<Map<String, Object>> yardItems = s.yards().stream().map(y -> Map.<String, Object>of(
+                "name", y.name(),
+                "sport_id", y.sportId(),
+                "sport_name", store.sportName(y.sportId()),
+                "hourly_price", y.hourlyPrice()
+        )).toList();
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", s.id());
+        m.put("submission_type", s.submissionType());
+        m.put("target_branch_id", s.targetBranchId());
+        m.put("target_branch_name", targetBranch != null ? Objects.toString(targetBranch.get("name"), s.name()) : null);
+        m.put("owner_user_id", s.ownerUserId());
+        m.put("owner_name", owner != null ? owner.displayName() : "Chủ sân");
+        m.put("owner_identifier", owner != null ? owner.identifier() : s.ownerUserId());
+        m.put("name", s.name());
+        m.put("address", s.address());
+        m.put("lat", s.lat());
+        m.put("lng", s.lng());
+        m.put("opening_hour", s.openingHour());
+        m.put("closing_hour", s.closingHour());
+        m.put("description", s.description());
+        m.put("rules", s.rules());
+        m.put("images", s.images());
+        m.put("yards", yardItems);
+        m.put("status", s.status());
+        m.put("review_note", s.reviewNote());
+        m.put("reviewed_by", s.reviewedBy());
+        m.put("created_at", s.createdAt().toString());
+        m.put("reviewed_at", s.reviewedAt() != null ? s.reviewedAt().toString() : null);
+        return m;
+    }
 
     @GetMapping("/owner/branches")
     public ResponseEntity<Map<String, Object>> ownerBranches(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {

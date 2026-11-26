@@ -38,6 +38,7 @@ function svgIcon(paths) {
 
 const TAB_META = {
   overview: { title: 'Tổng quan', sub: 'Số liệu vận hành, doanh thu và cảnh báo toàn hệ thống Anta', icon: ['M3 13h8V3H3z', 'M13 21h8V11h-8z', 'M13 3h8v6h-8z', 'M3 21h8v-6H3z'] },
+  submissions: { title: 'Duyệt cơ sở', sub: 'Kiểm duyệt hồ sơ đăng ký cơ sở mới và thêm sân từ chủ sân', icon: ['M9 11l3 3L22 4', 'M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11'] },
   users: { title: 'Người dùng', sub: 'Tìm kiếm tài khoản và cấp hoặc thu hồi quyền quản lý cơ sở', icon: ['M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2', 'M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M23 21v-2a4 4 0 0 0-3-3.87', 'M16 3.13a4 4 0 0 1 0 7.75'] },
   bookings: { title: 'Đặt sân', sub: 'Giám sát tất cả đơn đặt sân trên toàn hệ thống', icon: ['M8 2v4', 'M16 2v4', 'M3 10h18', 'M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z'] },
   payments: { title: 'Thanh toán', sub: 'Theo dõi giao dịch thanh toán và xử lý khoản tiền đến muộn', icon: ['M2 7h20v12H2z', 'M2 11h20', 'M6 15h4'] },
@@ -75,7 +76,9 @@ const STATUS_TEXT = {
   CREATED: 'Đang chờ',
   NEEDS_REVIEW: 'Tiền đến muộn',
   MANUAL_REVIEW: 'Cần chuyển tay',
-  PENDING: 'Đang xử lý',
+  PENDING: 'Chờ duyệt',
+  APPROVED: 'Đã duyệt',
+  REJECTED: 'Từ chối',
   FAILED: 'Thất bại',
   CANCELLED: 'Đã hủy',
   DELETED: 'Đã xóa',
@@ -83,7 +86,7 @@ const STATUS_TEXT = {
   EXPIRED: 'Hết hạn'
 };
 function tag(status) {
-  const ok = ['ACTIVE', 'CONFIRMED', 'SUCCEEDED'], bad = ['FAILED', 'CANCELLED', 'DELETED', 'DISABLED', 'EXPIRED'];
+  const ok = ['ACTIVE', 'CONFIRMED', 'SUCCEEDED', 'APPROVED'], bad = ['FAILED', 'CANCELLED', 'DELETED', 'DISABLED', 'EXPIRED', 'REJECTED'];
   const cls = ok.includes(status) ? 'ok' : bad.includes(status) ? 'bad' : 'warn';
   return el('span', { class: 'tag ' + cls, text: STATUS_TEXT[status] || status || '—' });
 }
@@ -125,7 +128,9 @@ function modal(title, bodyNodes, { confirmText = 'Xác nhận', onConfirm, dange
 const views = {
   async overview(view) {
     const s = await call('/admin/stats');
+    updatePendingBadge(s.pendingBranchSubmissions || 0);
     const items = [
+      { label: 'Hồ sơ sân chờ duyệt', value: s.pendingBranchSubmissions || 0, sub: 'Đăng ký cơ sở / sân mới', tone: (s.pendingBranchSubmissions || 0) > 0 ? 'warn' : 'ok', nav: ['submissions', { status: 'PENDING' }] },
       { label: 'Người dùng hoạt động', value: `${s.users.active} / ${s.users.total}`, sub: 'Tài khoản đang ACTIVE', tone: 'ok', nav: ['users', {}] },
       { label: 'Đặt sân đã xác nhận', value: s.bookings.confirmed, sub: 'Đơn hợp lệ trên hệ thống', tone: 'ok', nav: ['bookings', { status: 'CONFIRMED' }] },
       { label: 'Đơn chờ thanh toán / duyệt', value: s.bookings.pending, sub: 'Đang chờ hoàn tất', tone: s.bookings.pending > 0 ? 'warn' : '', nav: ['bookings', { status: 'PENDING_PAYMENT' }] },
@@ -145,6 +150,89 @@ const views = {
       ]);
       card.addEventListener('click', () => show(item.nav[0], item.nav[1]));
       return card;
+    })));
+  },
+  async submissions(view, toolbar, state) {
+    const sel = filter('Trạng thái hồ sơ', [['', 'Tất cả'], ['PENDING', 'Chờ duyệt'], ['APPROVED', 'Đã duyệt'], ['REJECTED', 'Đã từ chối']],
+      status => show('submissions', { status }));
+    toolbar.append(el('div', { class: 'toolbar' }, sel));
+    toolbar.querySelector('select').value = state.status || '';
+    const rows = await call('/admin/submissions' + (state.status ? '?status=' + encodeURIComponent(state.status) : ''));
+    const pendingCount = rows.filter(r => r.status === 'PENDING').length;
+    if (!state.status || state.status === 'PENDING') updatePendingBadge(pendingCount);
+    if (!rows.length) {
+      view.append(el('div', { class: 'card' }, el('p', { class: 'muted', style: 'margin:0', text: 'Không có hồ sơ đăng ký sân nào.' })));
+      return;
+    }
+    view.append(el('div', { class: 'sub-cards' }, rows.map(sub => {
+      const approveBtn = el('button', { class: 'small', text: '✓ Duyệt & đưa lên server' });
+      approveBtn.addEventListener('click', () => {
+        const noteIn = el('input', { placeholder: 'Ghi chú cho chủ sân (không bắt buộc)', value: 'Hồ sơ đạt yêu cầu, đã kích hoạt lên hệ thống Anta.' });
+        modal('Duyệt hồ sơ lên server', [
+          el('p', { text: `Xác nhận duyệt "${sub.name}" (${sub.yards.length} sân con) của ${sub.owner_identifier}? Cơ sở/sân sẽ hiển thị công khai ngay lập tức và tự động cấp quyền Chủ sân.` }),
+          el('label', {}, [el('span', { text: 'Ghi chú duyệt' }), noteIn])
+        ], { confirmText: 'Duyệt ngay', onConfirm: async () => {
+          await act(approveBtn, async () => {
+            await call(`/admin/submissions/${sub.id}/approve`, 'POST', { note: noteIn.value.trim() });
+            branches = await call('/admin/branches');
+            const st = await call('/admin/stats').catch(() => null);
+            if (st) updatePendingBadge(st.pendingBranchSubmissions || 0);
+          }, `Đã duyệt "${sub.name}" lên server.`);
+        } });
+      });
+
+      const rejectBtn = el('button', { class: 'small danger', text: 'Từ chối' });
+      rejectBtn.addEventListener('click', () => {
+        const reasonIn = el('textarea', { rows: 3, placeholder: 'Ví dụ: thiếu ảnh thực tế sân, địa chỉ chưa rõ ràng...' });
+        modal('Từ chối hồ sơ đăng ký', [
+          el('p', { text: `Từ chối hồ sơ "${sub.name}" của ${sub.owner_identifier}?` }),
+          el('label', {}, [el('span', { text: 'Lý do từ chối (bắt buộc)' }), reasonIn])
+        ], { confirmText: 'Xác nhận từ chối', danger: true, onConfirm: async () => {
+          const reason = reasonIn.value.trim();
+          if (!reason) throw new Error('Vui lòng nhập lý do từ chối.');
+          await act(rejectBtn, async () => {
+            await call(`/admin/submissions/${sub.id}/reject`, 'POST', { reason });
+            const st = await call('/admin/stats').catch(() => null);
+            if (st) updatePendingBadge(st.pendingBranchSubmissions || 0);
+          }, 'Đã từ chối hồ sơ.');
+        } });
+      });
+
+      const safeImgs = (sub.images || []).filter(u => typeof u === 'string' && (u.startsWith('https://') || u.startsWith('http://')));
+      return el('div', { class: 'card sub-card' }, [
+        el('div', { class: 'sub-head' }, [
+          el('div', {}, [
+            el('h3', { class: 'sub-title', text: sub.name }),
+            el('div', { class: 'sub-meta' }, [
+              el('span', { text: sub.submission_type === 'ADD_YARDS' ? `Thêm sân vào: ${sub.target_branch_name || sub.name}` : 'Đăng ký cơ sở mới' }),
+              el('span', { text: `Chủ hồ sơ: ${sub.owner_name} (${sub.owner_identifier})` }),
+              el('span', { text: `Gửi lúc ${time(sub.created_at)}` })
+            ])
+          ]),
+          el('div', { class: 'actions' }, [tag(sub.status), ...(sub.status === 'PENDING' ? [approveBtn, rejectBtn] : [])])
+        ]),
+        el('div', { class: 'sub-grid' }, [
+          el('div', { style: 'display:grid;gap:10px' }, [
+            el('div', {}, [el('strong', { text: 'Địa chỉ & giờ mở cửa: ' }), el('span', { text: `${sub.address} · ${String(sub.opening_hour).padStart(2, '0')}:00–${String(sub.closing_hour).padStart(2, '0')}:00 (${sub.lat}, ${sub.lng})` })]),
+            sub.description ? el('div', {}, [el('strong', { text: 'Mô tả: ' }), el('span', { class: 'muted', text: sub.description })]) : null,
+            el('div', {}, [
+              el('div', { style: 'font-weight:700;margin-bottom:6px', text: `Danh sách sân con (${sub.yards.length})` }),
+              el('div', { class: 'yard-chips' }, sub.yards.map(y => el('span', { class: 'yard-chip', text: `${y.name} · ${y.sport_name} · ${money(y.hourly_price)}/h` })))
+            ]),
+            sub.rules?.length ? el('div', {}, [
+              el('div', { style: 'font-weight:700;margin-bottom:4px', text: 'Nội quy' }),
+              el('ul', { class: 'sub-rules' }, sub.rules.map(r => el('li', { text: r })))
+            ]) : null,
+            sub.review_note ? el('div', { class: 'muted', style: 'font-size:12.5px', text: `Ghi chú duyệt: ${sub.review_note}${sub.reviewed_at ? ' (' + time(sub.reviewed_at) + ')' : ''}` }) : null
+          ]),
+          safeImgs.length
+            ? el('div', {}, [
+                el('div', { style: 'font-weight:700;margin-bottom:8px', text: `Hình ảnh (${safeImgs.length})` }),
+                el('div', { class: 'sub-photos' }, safeImgs.map(u => el('img', { src: u, alt: sub.name })))
+              ])
+            : el('p', { class: 'muted', style: 'margin:0', text: 'Chủ sân chưa đính kèm ảnh.' })
+        ])
+      ]);
     })));
   },
   async users(view, toolbar, state) {
@@ -249,6 +337,13 @@ const views = {
 };
 
 let current = 'overview', currentState = {};
+function updatePendingBadge(count) {
+  const btn = $('tabs').querySelector('[data-view="submissions"]');
+  if (!btn) return;
+  const old = btn.querySelector('.badge');
+  if (old) old.remove();
+  if (count > 0) btn.append(el('span', { class: 'badge', text: String(count) }));
+}
 function closeDrawer() {
   $('sidebar').classList.remove('open');
   $('backdrop').hidden = true;
@@ -281,6 +376,8 @@ async function start() {
     $('who').textContent = me.identifier;
     $('who-avatar').textContent = (me.displayName || me.identifier || 'A').trim().charAt(0).toUpperCase();
     $('login').hidden = true; $('app').hidden = false; notify('');
+    const stats = await call('/admin/stats').catch(() => null);
+    if (stats) updatePendingBadge(stats.pendingBranchSubmissions || 0);
     await show('overview', {});
   } catch (error) { signOut(); $('login-error').textContent = store.get('tried') ? error.message : ''; }
 }

@@ -21,6 +21,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Persistent store backed by PostgreSQL (or H2 in PostgreSQL mode for local dev) via JdbcTemplate,
@@ -92,6 +93,23 @@ public class AntaStore {
 
     public record RefundRecord(String id, String orderCode, String provider, long amount, int percent, String reason, String status, String providerRef, Instant createdAt) {}
     public record AuditEventRecord(long id, Instant createdAt, String actorId, String action, String targetType, String targetId, Map<String, Object> details) {}
+    public record SubmissionYardInput(String name, String sportId, long hourlyPrice) {
+        public Map<String, Object> toMap(Map<String, String> sportNames) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("name", name);
+            m.put("sport_id", sportId);
+            m.put("sport_name", sportNames.getOrDefault(sportId, sportId));
+            m.put("hourly_price", hourlyPrice);
+            return m;
+        }
+    }
+    public record BranchSubmissionRecord(
+            String id, String submissionType, String targetBranchId, String ownerUserId,
+            String name, String address, double lat, double lng,
+            int openingHour, int closingHour, String description,
+            List<String> rules, List<String> images, List<SubmissionYardInput> yards,
+            String status, String reviewNote, String reviewedBy, Instant createdAt, Instant reviewedAt
+    ) {}
 
     private final JdbcTemplate jdbc;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
@@ -101,7 +119,7 @@ public class AntaStore {
             .orElse("anta-cloud-demo-signing-secret-2026");
 
     private List<Map<String, Object>> sports = List.of();
-    private List<Map<String, Object>> branches = List.of();
+    private final List<Map<String, Object>> branches = new CopyOnWriteArrayList<>();
     private final Map<String, String> sportNameById = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>> branchIndex = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>> yardToBranch = new ConcurrentHashMap<>();
@@ -137,37 +155,137 @@ public class AntaStore {
     @SuppressWarnings("unchecked")
     private void loadCatalog() {
         try {
+            List<Map<String, Object>> loaded = new ArrayList<>();
             ClassPathResource res = new ClassPathResource("data/catalog.json");
             if (res.exists()) {
                 try (InputStream is = res.getInputStream()) {
                     Map<String, Object> root = mapper.readValue(is, new TypeReference<>() {});
                     if (root.get("sports") instanceof List<?> s) sports = (List<Map<String, Object>>) s;
-                    if (root.get("branches") instanceof List<?> b) branches = (List<Map<String, Object>>) b;
+                    if (root.get("branches") instanceof List<?> b) {
+                        for (Object item : b) {
+                            if (item instanceof Map<?, ?> raw) {
+                                loaded.add(new LinkedHashMap<>((Map<String, Object>) raw));
+                            }
+                        }
+                    }
                 }
             }
             for (Map<String, Object> s : sports) {
                 String sid = Objects.toString(s.get("id"), "");
                 if (!sid.isBlank()) sportNameById.put(sid, Objects.toString(s.get("name"), sid));
             }
+
+            List<String> customJsons = jdbc.query(
+                    "SELECT payload_json FROM custom_branches ORDER BY created_at_ms ASC",
+                    (rs, i) -> rs.getString("payload_json")
+            );
+            for (String json : customJsons) {
+                Map<String, Object> customBranch = mapper.readValue(json, new TypeReference<>() {});
+                loaded.add(new LinkedHashMap<>(customBranch));
+            }
+
+            branches.clear();
+            branches.addAll(loaded);
             for (Map<String, Object> branch : branches) {
-                putKey(branchIndex, branch.get("id"), branch);
-                putKey(branchIndex, branch.get("slug"), branch);
-                if (branch.get("yards") instanceof List<?> yards) {
-                    for (Object yObj : yards) {
-                        if (yObj instanceof Map<?, ?> rawYard) {
-                            Map<String, Object> yard = (Map<String, Object>) rawYard;
-                            String yId = Objects.toString(yard.get("id"), null);
-                            if (yId != null) {
-                                yardIndex.put(yId, yard);
-                                yardToBranch.put(yId, branch);
-                            }
-                        }
-                    }
+                indexBranch(branch);
+            }
+
+            List<Map<String, Object>> extraYardRows = jdbc.query(
+                    "SELECT id, branch_id, name, sport_id, hourly_price FROM custom_yards ORDER BY created_at_ms ASC",
+                    (rs, i) -> Map.<String, Object>of(
+                            "id", rs.getString("id"),
+                            "branch_id", rs.getString("branch_id"),
+                            "name", rs.getString("name"),
+                            "sport_id", rs.getString("sport_id"),
+                            "hourly_price", rs.getLong("hourly_price")
+                    )
+            );
+            for (Map<String, Object> row : extraYardRows) {
+                String branchId = Objects.toString(row.get("branch_id"), "");
+                Map<String, Object> target = branchIndex.get(branchId);
+                if (target != null) {
+                    Map<String, Object> yard = new LinkedHashMap<>();
+                    yard.put("id", row.get("id"));
+                    yard.put("name", row.get("name"));
+                    yard.put("sport_id", row.get("sport_id"));
+                    yard.put("hourly_price", row.get("hourly_price"));
+                    appendYardsToBranch(target, List.of(yard));
                 }
             }
         } catch (Exception e) {
             throw new IllegalStateException("Failed to load catalog.json", e);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void indexBranch(Map<String, Object> branch) {
+        putKey(branchIndex, branch.get("id"), branch);
+        putKey(branchIndex, branch.get("slug"), branch);
+        if (branch.get("yards") instanceof List<?> yards) {
+            for (Object yObj : yards) {
+                if (yObj instanceof Map<?, ?> rawYard) {
+                    Map<String, Object> yard = (Map<String, Object>) rawYard;
+                    String yId = Objects.toString(yard.get("id"), null);
+                    if (yId != null) {
+                        yardIndex.put(yId, yard);
+                        yardToBranch.put(yId, branch);
+                    }
+                }
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private synchronized void appendYardsToBranch(Map<String, Object> branch, List<Map<String, Object>> newYards) {
+        List<Map<String, Object>> yards = new ArrayList<>();
+        if (branch.get("yards") instanceof List<?> existing) {
+            for (Object o : existing) {
+                if (o instanceof Map<?, ?> m) yards.add(new LinkedHashMap<>((Map<String, Object>) m));
+            }
+        }
+        for (Map<String, Object> y : newYards) {
+            String yId = Objects.toString(y.get("id"), "");
+            if (yards.stream().noneMatch(e -> yId.equals(Objects.toString(e.get("id"), "")))) {
+                yards.add(y);
+            }
+            if (!yId.isBlank()) {
+                yardIndex.put(yId, y);
+                yardToBranch.put(yId, branch);
+            }
+        }
+        branch.put("yards", yards);
+        recomputeBranchSummary(branch, yards);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void recomputeBranchSummary(Map<String, Object> branch, List<Map<String, Object>> yards) {
+        long minPrice = yards.stream()
+                .mapToLong(y -> longVal(y.get("hourly_price"), 0L))
+                .filter(p -> p > 0)
+                .min()
+                .orElse(longVal(branch.get("min_price"), 150000L));
+        branch.put("min_price", minPrice);
+
+        Set<String> sportIds = new LinkedHashSet<>();
+        for (Map<String, Object> y : yards) {
+            String sid = Objects.toString(y.get("sport_id"), "");
+            if (!sid.isBlank()) sportIds.add(sid);
+        }
+        List<Map<String, Object>> branchSports = new ArrayList<>();
+        for (String sid : sportIds) {
+            Map<String, Object> match = sports.stream()
+                    .filter(s -> sid.equals(Objects.toString(s.get("id"), "")))
+                    .findFirst()
+                    .orElse(null);
+            if (match != null) {
+                branchSports.add(Map.of(
+                        "id", sid,
+                        "slug", Objects.toString(match.get("slug"), sid.replace("sp-", "")),
+                        "name", Objects.toString(match.get("name"), sid)
+                ));
+            }
+        }
+        if (!branchSports.isEmpty()) branch.put("sports", branchSports);
     }
 
     private void seedSampleBooking() {
@@ -653,6 +771,195 @@ public class AntaStore {
                         rs.getString("status"), rs.getString("provider_ref"), Instant.ofEpochMilli(rs.getLong("created_at_ms"))
                 )
         );
+    }
+
+    // ---- Branch & Yard Submissions (Admin Approval Required) ----
+
+    public BranchSubmissionRecord saveBranchSubmission(BranchSubmissionRecord sub) {
+        jdbc.update(
+                """
+                INSERT INTO branch_submissions(
+                    id, submission_type, target_branch_id, owner_user_id, name, address, lat, lng,
+                    opening_hour, closing_hour, description, rules_json, images_json, yards_json,
+                    status, review_note, reviewed_by, created_at_ms, reviewed_at_ms
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                sub.id(), sub.submissionType(), sub.targetBranchId(), sub.ownerUserId(),
+                sub.name(), sub.address(), sub.lat(), sub.lng(), sub.openingHour(), sub.closingHour(),
+                sub.description(), writeJson(sub.rules()), writeJson(sub.images()),
+                writeJson(sub.yards().stream().map(y -> Map.of("name", y.name(), "sport_id", y.sportId(), "hourly_price", y.hourlyPrice())).toList()),
+                sub.status(), sub.reviewNote(), sub.reviewedBy(),
+                sub.createdAt().toEpochMilli(), sub.reviewedAt() != null ? sub.reviewedAt().toEpochMilli() : null
+        );
+        return sub;
+    }
+
+    public BranchSubmissionRecord findSubmission(String id) {
+        List<BranchSubmissionRecord> list = jdbc.query(
+                "SELECT * FROM branch_submissions WHERE id = ?",
+                (rs, i) -> mapSubmissionRow(rs),
+                id
+        );
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    public List<BranchSubmissionRecord> listSubmissionsByOwner(String ownerUserId) {
+        return jdbc.query(
+                "SELECT * FROM branch_submissions WHERE owner_user_id = ? ORDER BY created_at_ms DESC",
+                (rs, i) -> mapSubmissionRow(rs),
+                ownerUserId
+        );
+    }
+
+    public List<BranchSubmissionRecord> listSubmissions(String statusFilter) {
+        if (statusFilter != null && !statusFilter.isBlank()) {
+            return jdbc.query(
+                    "SELECT * FROM branch_submissions WHERE status = ? ORDER BY created_at_ms DESC",
+                    (rs, i) -> mapSubmissionRow(rs),
+                    statusFilter.trim().toUpperCase(Locale.ROOT)
+            );
+        }
+        return jdbc.query(
+                "SELECT * FROM branch_submissions ORDER BY created_at_ms DESC",
+                (rs, i) -> mapSubmissionRow(rs)
+        );
+    }
+
+    public long countPendingSubmissions() {
+        Long cnt = jdbc.queryForObject("SELECT COUNT(*) FROM branch_submissions WHERE status = 'PENDING'", Long.class);
+        return cnt != null ? cnt : 0L;
+    }
+
+    @Transactional
+    public Map<String, Object> approveBranchSubmission(String submissionId, String adminUserId, String note) {
+        BranchSubmissionRecord sub = findSubmission(submissionId);
+        if (sub == null) throw new IllegalArgumentException("NOT_FOUND:Không tìm thấy hồ sơ đăng ký sân");
+        if (!"PENDING".equals(sub.status())) throw new IllegalStateException("CONFLICT:Hồ sơ này đã được xử lý trước đó");
+
+        long nowMs = Instant.now().toEpochMilli();
+        String resultBranchId;
+
+        if ("ADD_YARDS".equals(sub.submissionType())) {
+            resultBranchId = sub.targetBranchId();
+            Map<String, Object> target = findBranch(resultBranchId);
+            if (target == null) throw new IllegalStateException("NOT_FOUND:Cơ sở đích không tồn tại");
+            List<Map<String, Object>> createdYards = new ArrayList<>();
+            for (SubmissionYardInput input : sub.yards()) {
+                String yardId = UUID.randomUUID().toString();
+                jdbc.update(
+                        "INSERT INTO custom_yards(id, branch_id, name, sport_id, hourly_price, created_at_ms) VALUES (?, ?, ?, ?, ?, ?)",
+                        yardId, resultBranchId, input.name(), input.sportId(), input.hourlyPrice(), nowMs
+                );
+                Map<String, Object> yMap = new LinkedHashMap<>();
+                yMap.put("id", yardId);
+                yMap.put("name", input.name());
+                yMap.put("sport_id", input.sportId());
+                yMap.put("hourly_price", input.hourlyPrice());
+                createdYards.add(yMap);
+            }
+            appendYardsToBranch(target, createdYards);
+        } else {
+            resultBranchId = UUID.randomUUID().toString();
+            String slugBase = normalizeSearch(sub.name()).replaceAll("[^a-z0-9]+", "_").replaceAll("^_+|_+$", "");
+            if (slugBase.isBlank()) slugBase = "venue";
+            String slug = "sport_" + slugBase + "_" + resultBranchId.substring(0, 6);
+
+            List<Map<String, Object>> yardList = new ArrayList<>();
+            for (SubmissionYardInput input : sub.yards()) {
+                Map<String, Object> yMap = new LinkedHashMap<>();
+                yMap.put("id", UUID.randomUUID().toString());
+                yMap.put("name", input.name());
+                yMap.put("sport_id", input.sportId());
+                yMap.put("hourly_price", input.hourlyPrice());
+                yardList.add(yMap);
+            }
+
+            Map<String, Object> branch = new LinkedHashMap<>();
+            branch.put("id", resultBranchId);
+            branch.put("slug", slug);
+            branch.put("name", sub.name());
+            branch.put("address", sub.address());
+            branch.put("lat", sub.lat());
+            branch.put("lng", sub.lng());
+            branch.put("opening_hour", sub.openingHour());
+            branch.put("closing_hour", sub.closingHour());
+            branch.put("timezone", "Asia/Ho_Chi_Minh");
+            branch.put("images", sub.images());
+            branch.put("rating", 5.0);
+            branch.put("review_count", 0);
+            branch.put("rules", sub.rules());
+            branch.put("description", sub.description());
+            branch.put("yards", yardList);
+            recomputeBranchSummary(branch, yardList);
+
+            jdbc.update(
+                    "INSERT INTO custom_branches(id, owner_user_id, payload_json, created_at_ms) VALUES (?, ?, ?, ?)",
+                    resultBranchId, sub.ownerUserId(), writeJson(branch), nowMs
+            );
+            branches.add(branch);
+            indexBranch(branch);
+            grantRole(sub.ownerUserId(), "branch_owner", resultBranchId);
+        }
+
+        jdbc.update(
+                "UPDATE branch_submissions SET status = 'APPROVED', review_note = ?, reviewed_by = ?, reviewed_at_ms = ? WHERE id = ?",
+                note, adminUserId, nowMs, submissionId
+        );
+        recordAudit(adminUserId, "branch_submission.approve", "branch_submission", submissionId,
+                Map.of("type", sub.submissionType(), "branchId", resultBranchId, "ownerUserId", sub.ownerUserId()));
+        return Map.of("id", submissionId, "status", "APPROVED", "branchId", resultBranchId);
+    }
+
+    @Transactional
+    public void rejectBranchSubmission(String submissionId, String adminUserId, String reason) {
+        BranchSubmissionRecord sub = findSubmission(submissionId);
+        if (sub == null) throw new IllegalArgumentException("NOT_FOUND:Không tìm thấy hồ sơ đăng ký sân");
+        if (!"PENDING".equals(sub.status())) throw new IllegalStateException("CONFLICT:Hồ sơ này đã được xử lý trước đó");
+        long nowMs = Instant.now().toEpochMilli();
+        jdbc.update(
+                "UPDATE branch_submissions SET status = 'REJECTED', review_note = ?, reviewed_by = ?, reviewed_at_ms = ? WHERE id = ?",
+                reason, adminUserId, nowMs, submissionId
+        );
+        recordAudit(adminUserId, "branch_submission.reject", "branch_submission", submissionId, Map.of("reason", reason));
+    }
+
+    private BranchSubmissionRecord mapSubmissionRow(java.sql.ResultSet rs) throws java.sql.SQLException {
+        List<String> rules = readJsonList(rs.getString("rules_json"), new TypeReference<>() {});
+        List<String> images = readJsonList(rs.getString("images_json"), new TypeReference<>() {});
+        List<Map<String, Object>> rawYards = readJsonList(rs.getString("yards_json"), new TypeReference<>() {});
+        List<SubmissionYardInput> yards = rawYards.stream()
+                .map(m -> new SubmissionYardInput(
+                        Objects.toString(m.get("name"), "Sân 1"),
+                        Objects.toString(m.get("sport_id"), "sp-pickleball"),
+                        longVal(m.get("hourly_price"), 150000L)
+                )).toList();
+        long revMs = rs.getLong("reviewed_at_ms");
+        Instant revAt = rs.wasNull() ? null : Instant.ofEpochMilli(revMs);
+        return new BranchSubmissionRecord(
+                rs.getString("id"), rs.getString("submission_type"), rs.getString("target_branch_id"),
+                rs.getString("owner_user_id"), rs.getString("name"), rs.getString("address"),
+                rs.getDouble("lat"), rs.getDouble("lng"), rs.getInt("opening_hour"), rs.getInt("closing_hour"),
+                rs.getString("description"), rules, images, yards, rs.getString("status"),
+                rs.getString("review_note"), rs.getString("reviewed_by"),
+                Instant.ofEpochMilli(rs.getLong("created_at_ms")), revAt
+        );
+    }
+
+    private String writeJson(Object obj) {
+        try {
+            return mapper.writeValueAsString(obj);
+        } catch (Exception e) {
+            return "[]";
+        }
+    }
+
+    private <T> List<T> readJsonList(String json, TypeReference<List<T>> ref) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            return mapper.readValue(json, ref);
+        } catch (Exception e) {
+            return List.of();
+        }
     }
 
     public void recordAudit(String actorId, String action, String targetType, String targetId, Map<String, Object> details) {

@@ -135,3 +135,46 @@ CREATE TABLE IF NOT EXISTS media_assets (
 );
 
 CREATE INDEX IF NOT EXISTS idx_media_assets_branch ON media_assets(branch_id, status, created_at_ms);
+
+CREATE TABLE IF NOT EXISTS branch_submissions (
+    id VARCHAR(64) PRIMARY KEY,
+    submission_type VARCHAR(24) NOT NULL,
+    target_branch_id VARCHAR(64),
+    owner_user_id VARCHAR(64) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    address TEXT NOT NULL,
+    lat DOUBLE PRECISION NOT NULL,
+    lng DOUBLE PRECISION NOT NULL,
+    opening_hour INT NOT NULL,
+    closing_hour INT NOT NULL,
+    description TEXT NOT NULL,
+    rules_json TEXT NOT NULL,
+    images_json TEXT NOT NULL,
+    yards_json TEXT NOT NULL,
+    status VARCHAR(24) NOT NULL,
+    review_note TEXT,
+    reviewed_by VARCHAR(64),
+    created_at_ms BIGINT NOT NULL,
+    reviewed_at_ms BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_branch_submissions_status ON branch_submissions(status, created_at_ms);
+CREATE INDEX IF NOT EXISTS idx_branch_submissions_owner ON branch_submissions(owner_user_id, created_at_ms);
+
+CREATE TABLE IF NOT EXISTS custom_branches (
+    id VARCHAR(64) PRIMARY KEY,
+    owner_user_id VARCHAR(64) NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at_ms BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS custom_yards (
+    id VARCHAR(64) PRIMARY KEY,
+    branch_id VARCHAR(64) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    sport_id VARCHAR(64) NOT NULL,
+    hourly_price BIGINT NOT NULL,
+    created_at_ms BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_custom_yards_branch ON custom_yards(branch_id, created_at_ms);

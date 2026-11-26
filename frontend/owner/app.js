@@ -42,6 +42,7 @@ const NAV_ICONS = {
   bookings: ['M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2', 'M9 3h6v4H9z', 'M9 12h6', 'M9 16h4'],
   cancellations: ['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z', 'M15 9l-6 6', 'M9 9l6 6'],
   courts: ['M3 5h18v14H3z', 'M12 5v14', 'M3 12h18'],
+  'submit-branch': ['M12 5v14', 'M5 12h14', 'M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z'],
   services: ['M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z', 'M3 6h18', 'M16 10a4 4 0 0 1-8 0'],
   cashflow: ['M12 1v22', 'M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6']
 };
@@ -118,13 +119,13 @@ function notAvailableYet(what) {
 }
 
 // ---- state ----
-let branches = [], currentBranch = null, stats = null;
+let branches = [], sportsList = [], currentBranch = null, stats = null;
 let scheduleState = { date: dateInput(new Date()), sportId: '', courtId: '' };
 let bookingState = { page: 1 };
 
 const NAV = { operations: [['stats', 'Thống kê'], ['schedule', 'Lịch sân'], ['bookings', 'Đơn đặt'], ['cancellations', 'Yêu cầu huỷ']],
-  facility: [['courts', 'Sân và giá'], ['services', 'Dịch vụ'], ['cashflow', 'Thu chi']] };
-const IMPLEMENTED = new Set(['schedule', 'bookings']);
+  facility: [['courts', 'Sân và giá'], ['submit-branch', 'Đăng ký sân mới'], ['services', 'Dịch vụ'], ['cashflow', 'Thu chi']] };
+const IMPLEMENTED = new Set(['schedule', 'bookings', 'courts', 'submit-branch']);
 let current = 'schedule';
 
 function closeDrawer() {
@@ -150,7 +151,15 @@ async function go(view, extra) {
     container.replaceChildren(el('div', { class: 'card' }, [
       el('h3', { text: 'Phân hệ đang phát triển' }),
       el('p', { class: 'muted', style: 'margin:0',
-        text: 'Màn hình này chưa thuộc phạm vi triển khai giai đoạn đầu (hiện hỗ trợ Lịch sân, Khóa/mở giờ, Đơn đặt, Chi tiết đơn và Xác nhận/Từ chối đơn).' })
+        text: 'Màn hình này chưa thuộc phạm vi triển khai giai đoạn đầu (hiện hỗ trợ Lịch sân, Đơn đặt, Sân và giá, và Đăng ký cơ sở mới chờ Admin duyệt).' })
+    ]));
+    return;
+  }
+  if ((view === 'schedule' || view === 'bookings' || view === 'courts' || view === 'detail') && !currentBranch) {
+    container.replaceChildren(el('div', { class: 'card' }, [
+      el('h3', { text: 'Tài khoản chưa có cơ sở được duyệt' }),
+      el('p', { class: 'muted', text: 'Bạn có thể gửi hồ sơ đăng ký cơ sở mới ngay bây giờ. Sau khi Admin phê duyệt, cơ sở sẽ xuất hiện ở thanh chọn bên trái.' }),
+      el('button', { text: '＋ Đăng ký cơ sở mới ngay', on: { click: () => go('submit-branch') } })
     ]));
     return;
   }
@@ -158,6 +167,8 @@ async function go(view, extra) {
     if (view === 'schedule') await renderSchedule(container);
     else if (view === 'bookings') await renderBookings(container);
     else if (view === 'detail') await renderDetail(container, extra);
+    else if (view === 'courts') await renderCourts(container);
+    else if (view === 'submit-branch') await renderSubmitBranch(container);
   } catch (error) { container.replaceChildren(); notify(error.message, true); }
 }
 async function refreshStats() {
@@ -385,6 +396,266 @@ function openRejectModal(row) {
   } });
 }
 
+// ---- Đăng ký cơ sở mới & Sân và giá ----
+function submissionBadge(status) {
+  if (status === 'APPROVED') return el('span', { class: 'tag ok', text: 'Đã duyệt · Đã lên server' });
+  if (status === 'REJECTED') return el('span', { class: 'tag bad', text: 'Từ chối' });
+  return el('span', { class: 'tag wait', text: 'Chờ Admin duyệt' });
+}
+
+async function uploadPhotoToAzure(file, branchId) {
+  const mimeType = file.type || 'image/jpeg';
+  const presign = await call(branchId ? `/branches/${branchId}/images/presign` : '/media/presign', 'POST', { mimeType });
+  const putResp = await fetch(presign.url, { method: presign.method || 'PUT', headers: presign.headers || { 'Content-Type': mimeType }, body: file });
+  if (!putResp.ok) throw new Error(`Tải ảnh lên Azure thất bại (HTTP ${putResp.status})`);
+  const done = await call(`/media/${presign.uploadId}/complete`, 'POST');
+  return done.url || presign.publicUrl;
+}
+
+function makeYardRowEditor(initial = {}) {
+  const nameIn = el('input', { placeholder: 'Ví dụ: Sân 1 (Ngoài trời)', value: initial.name || '' });
+  const opts = sportsList.length ? sportsList : [{ id: 'sp-pickleball', name: 'Pickleball' }, { id: 'sp-badminton', name: 'Cầu lông' }, { id: 'sp-football', name: 'Bóng đá mini' }, { id: 'sp-tennis', name: 'Tennis' }];
+  const sportSel = el('select', {}, opts.map(s => el('option', { value: s.id, text: s.name })));
+  if (initial.sportId) sportSel.value = initial.sportId;
+  const priceIn = el('input', { type: 'number', min: '10000', step: '10000', value: String(initial.hourlyPrice || 200000) });
+  const removeBtn = el('button', { type: 'button', class: 'danger small', text: '✕', title: 'Xóa sân này' });
+  const row = el('div', { class: 'yard-row' }, [
+    el('label', {}, [el('span', { text: 'Tên sân con' }), nameIn]),
+    el('label', {}, [el('span', { text: 'Môn thể thao' }), sportSel]),
+    el('label', {}, [el('span', { text: 'Giá / giờ (đ)' }), priceIn]),
+    removeBtn
+  ]);
+  return {
+    el: row,
+    removeBtn,
+    read: () => ({ name: nameIn.value.trim(), sportId: sportSel.value, hourlyPrice: Number(priceIn.value || 0) })
+  };
+}
+
+async function renderSubmitBranch(container) {
+  const [subs] = await Promise.all([call('/owner/submissions'), loadBranchesAndSyncSelector()]);
+  const wrap = el('div');
+  wrap.append(el('div', { class: 'page-head' }, [
+    el('div', {}, [
+      el('h2', { text: 'Đăng ký sân & cơ sở mới' }),
+      el('div', { class: 'sub', text: 'Hồ sơ gửi lên sẽ được Admin kiểm duyệt trước khi hiển thị công khai trên app và server.' })
+    ]),
+    el('button', { class: 'ghost small', text: '↻ Cập nhật trạng thái duyệt', on: { click: () => go('submit-branch') } })
+  ]));
+
+  const nameIn = el('input', { placeholder: 'Ví dụ: Pickleball Cầu Giấy Arena', required: 'required' });
+  const addrIn = el('input', { placeholder: 'Số nhà, đường, quận/huyện, thành phố', required: 'required' });
+  const latIn = el('input', { type: 'number', step: 'any', value: '21.0285' });
+  const lngIn = el('input', { type: 'number', step: 'any', value: '105.8542' });
+  const citySel = el('select', {}, [
+    el('option', { value: '21.0285,105.8542', text: 'Hà Nội (mặc định)' }),
+    el('option', { value: '10.7721,106.6951', text: 'TP. Hồ Chí Minh (Q.1)' }),
+    el('option', { value: '16.0544,108.2022', text: 'Đà Nẵng' }),
+    el('option', { value: '', text: 'Giữ tọa độ tự nhập' })
+  ]);
+  citySel.addEventListener('change', () => {
+    if (!citySel.value) return;
+    const [la, ln] = citySel.value.split(',');
+    latIn.value = la; lngIn.value = ln;
+  });
+
+  const openIn = el('input', { type: 'number', min: '0', max: '23', value: '6' });
+  const closeIn = el('input', { type: 'number', min: '1', max: '24', value: '22' });
+  const descIn = el('textarea', { rows: 3, placeholder: 'Ví dụ: Sân tiêu chuẩn thi đấu, có mái che, bãi đỗ xe miễn phí. T2-CN: 6h-22h: 200.000 ₫.' });
+  const rulesIn = el('textarea', { rows: 3, placeholder: 'Mỗi dòng là một nội quy (ví dụ: Mang giày đế bằng không bám bẩn)' });
+
+  const uploadedImages = [];
+  const thumbsWrap = el('div', { class: 'photo-thumbs' });
+  function renderThumbs() {
+    thumbsWrap.replaceChildren(...uploadedImages.map((url, idx) => el('div', { class: 'photo-thumb' }, [
+      el('img', { src: url, alt: 'Ảnh cơ sở' }),
+      el('button', { type: 'button', text: '✕', on: { click: () => { uploadedImages.splice(idx, 1); renderThumbs(); } } })
+    ])));
+  }
+
+  const fileIn = el('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp' });
+  const uploadStatus = el('span', { class: 'muted', style: 'font-size:12px', text: 'Hỗ trợ JPG/PNG/WebP — lưu trực tiếp lên Azure Blob Storage.' });
+  const uploadBtn = el('button', { type: 'button', class: 'ghost small', text: '⬆ Tải ảnh lên Azure' });
+  uploadBtn.addEventListener('click', async () => {
+    const file = fileIn.files?.[0];
+    if (!file) { notify('Vui lòng chọn tệp ảnh trước khi tải lên.', true); return; }
+    await act(uploadBtn, async () => {
+      uploadStatus.textContent = 'Đang tải ảnh lên Azure Blob…';
+      const url = await uploadPhotoToAzure(file, null);
+      uploadedImages.push(url);
+      renderThumbs();
+      fileIn.value = '';
+      uploadStatus.textContent = `Đã tải lên (${uploadedImages.length} ảnh).`;
+    }, 'Đã tải ảnh lên Azure Blob Storage.');
+  });
+
+  const urlIn = el('input', { placeholder: 'Hoặc dán link ảnh https://...' });
+  const addUrlBtn = el('button', { type: 'button', class: 'ghost small', text: 'Thêm link' });
+  addUrlBtn.addEventListener('click', () => {
+    const u = urlIn.value.trim();
+    if (!u.startsWith('http://') && !u.startsWith('https://')) { notify('Link ảnh phải bắt đầu bằng https:// hoặc http://', true); return; }
+    uploadedImages.push(u); renderThumbs(); urlIn.value = '';
+  });
+
+  const yardEditors = [];
+  const yardHost = el('div', { class: 'yard-rows' });
+  function addYardRow(init) {
+    const editor = makeYardRowEditor(init);
+    editor.removeBtn.addEventListener('click', () => {
+      if (yardEditors.length <= 1) { notify('Cần tối thiểu 1 sân con trong hồ sơ.', true); return; }
+      const i = yardEditors.indexOf(editor);
+      if (i >= 0) yardEditors.splice(i, 1);
+      editor.el.remove();
+    });
+    yardEditors.push(editor);
+    yardHost.append(editor.el);
+  }
+  addYardRow({ name: 'Sân 1', hourlyPrice: 200000 });
+
+  const submitBtn = el('button', { type: 'submit', text: 'Gửi hồ sơ chờ Admin duyệt' });
+  const form = el('form', { class: 'form-stack' }, [
+    el('label', {}, [el('span', { text: 'Tên cơ sở / cụm sân *' }), nameIn]),
+    el('label', {}, [el('span', { text: 'Địa chỉ đầy đủ *' }), addrIn]),
+    el('div', { class: 'form-grid' }, [
+      el('label', {}, [el('span', { text: 'Khu vực gợi ý' }), citySel]),
+      el('div', { class: 'form-grid' }, [
+        el('label', {}, [el('span', { text: 'Giờ mở cửa' }), openIn]),
+        el('label', {}, [el('span', { text: 'Giờ đóng cửa' }), closeIn])
+      ])
+    ]),
+    el('div', { class: 'form-grid' }, [
+      el('label', {}, [el('span', { text: 'Vĩ độ (Lat)' }), latIn]),
+      el('label', {}, [el('span', { text: 'Kinh độ (Lng)' }), lngIn])
+    ]),
+    el('div', {}, [
+      el('label', {}, [el('span', { text: 'Hình ảnh cơ sở' })]),
+      el('div', { class: 'photo-box' }, [
+        el('div', { class: 'actions' }, [fileIn, uploadBtn]),
+        el('div', { class: 'actions' }, [urlIn, addUrlBtn]),
+        uploadStatus,
+        thumbsWrap
+      ])
+    ]),
+    el('div', {}, [
+      el('div', { style: 'display:flex;justify-content:space-between;align-items:center' }, [
+        el('label', { style: 'margin:0' }, [el('span', { style: 'margin:0', text: 'Danh sách sân con (tối thiểu 1 sân) *' })]),
+        el('button', { type: 'button', class: 'ghost small', text: '＋ Thêm sân con', on: { click: () => addYardRow({ name: `Sân ${yardEditors.length + 1}`, hourlyPrice: 200000 }) } })
+      ]),
+      yardHost
+    ]),
+    el('label', {}, [el('span', { text: 'Mô tả & bảng giá' }), descIn]),
+    el('label', {}, [el('span', { text: 'Nội quy sân (mỗi dòng 1 quy định)' }), rulesIn]),
+    el('div', { class: 'actions' }, [submitBtn])
+  ]);
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const yards = yardEditors.map(x => x.read()).filter(y => y.name && y.hourlyPrice >= 10000);
+    if (!nameIn.value.trim() || !addrIn.value.trim()) { notify('Vui lòng nhập tên cơ sở và địa chỉ.', true); return; }
+    if (!yards.length) { notify('Cần tối thiểu 1 sân con hợp lệ (giá tối thiểu 10.000 đ).', true); return; }
+    const rules = rulesIn.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    await act(submitBtn, () => call('/owner/submissions', 'POST', {
+      submissionType: 'NEW_BRANCH',
+      name: nameIn.value.trim(),
+      address: addrIn.value.trim(),
+      lat: Number(latIn.value || 10.7721),
+      lng: Number(lngIn.value || 106.6951),
+      openingHour: Number(openIn.value || 6),
+      closingHour: Number(closeIn.value || 22),
+      description: descIn.value.trim(),
+      rules,
+      images: uploadedImages,
+      yards
+    }), 'Đã gửi hồ sơ đăng ký cơ sở mới! Chờ Admin duyệt để lên sàn.');
+    await go('submit-branch');
+  });
+
+  const historyCard = el('div', { class: 'card' }, [
+    el('h3', { text: `Hồ sơ đã gửi (${subs.length})` }),
+    subs.length
+      ? el('div', { class: 'sub-list' }, subs.map(s => el('div', { class: 'sub-item' }, [
+          el('div', { class: 'sub-item-head' }, [
+            el('strong', { text: `${s.submission_type === 'ADD_YARDS' ? '[Thêm sân] ' : ''}${s.name}` }),
+            submissionBadge(s.status)
+          ]),
+          el('div', { class: 'muted', style: 'font-size:12.5px', text: `${s.address} · ${s.yards.length} sân con · Gửi lúc ${time(s.created_at)}` }),
+          el('div', { class: 'muted', style: 'font-size:12.5px', text: s.yards.map(y => `${y.name} (${y.sport_name} - ${money(y.hourly_price)}/h)`).join(', ') }),
+          s.review_note ? el('div', { class: 'sub-note', text: `Ghi chú Admin: ${s.review_note}` }) : null
+        ])))
+      : el('p', { class: 'muted', style: 'margin:0', text: 'Bạn chưa gửi hồ sơ đăng ký cơ sở hay sân nào.' })
+  ]);
+
+  wrap.append(el('div', { class: 'two-col' }, [
+    el('div', { class: 'card' }, [el('h3', { text: 'Thông tin cơ sở mới' }), form]),
+    historyCard
+  ]));
+  container.replaceChildren(wrap);
+}
+
+async function renderCourts(container) {
+  const data = await call(`/owner/branches/${currentBranch}/courts`);
+  const wrap = el('div');
+  wrap.append(el('div', { class: 'page-head' }, [
+    el('div', {}, [
+      el('h2', { text: 'Sân và giá' }),
+      el('div', { class: 'sub', text: `${data.branch.name} · Hiện có ${data.courts.length} sân đang hoạt động trên sàn` })
+    ]),
+    el('button', { class: 'ghost small', text: '＋ Đăng ký cơ sở mới khác', on: { click: () => go('submit-branch') } })
+  ]));
+
+  const currentCard = el('div', { class: 'card' }, [
+    el('h3', { text: 'Danh sách sân đang hoạt động' }),
+    table([
+      { title: 'Tên sân', render: r => el('strong', { text: r.name }) },
+      { title: 'Môn thể thao', render: r => r.sport_name },
+      { title: 'Giá / giờ', render: r => el('strong', { text: money(r.hourly_price) }) }
+    ], data.courts)
+  ]);
+
+  const yardEditor = makeYardRowEditor({ name: `Sân ${data.courts.length + 1}`, hourlyPrice: 200000 });
+  yardEditor.removeBtn.hidden = true;
+  const addBtn = el('button', { type: 'submit', text: 'Gửi yêu cầu thêm sân chờ Admin duyệt' });
+  const addForm = el('form', { class: 'form-stack' }, [
+    yardEditor.el,
+    el('div', { class: 'actions' }, [addBtn])
+  ]);
+  addForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    const y = yardEditor.read();
+    if (!y.name || y.hourlyPrice < 10000) { notify('Nhập tên sân và giá hợp lệ (tối thiểu 10.000 đ).', true); return; }
+    await act(addBtn, () => call('/owner/submissions', 'POST', {
+      submissionType: 'ADD_YARDS',
+      targetBranchId: currentBranch,
+      name: data.branch.name,
+      address: data.branch.address,
+      yards: [y]
+    }), 'Đã gửi yêu cầu thêm sân con chờ Admin duyệt.');
+    await go('courts');
+  });
+
+  const addCard = el('div', { class: 'card' }, [
+    el('h3', { text: 'Đăng ký thêm sân con mới' }),
+    el('p', { class: 'muted', style: 'margin:0 0 12px;font-size:13px', text: 'Sân mới thêm sẽ ở trạng thái chờ duyệt và chỉ hiển thị cho khách đặt sau khi Admin phê duyệt.' }),
+    addForm
+  ]);
+
+  const pendingCard = el('div', { class: 'card', style: 'margin-top:16px' }, [
+    el('h3', { text: `Yêu cầu thêm sân đã gửi (${data.submissions.length})` }),
+    data.submissions.length
+      ? el('div', { class: 'sub-list' }, data.submissions.map(s => el('div', { class: 'sub-item' }, [
+          el('div', { class: 'sub-item-head' }, [
+            el('strong', { text: s.yards.map(y => `${y.name} (${y.sport_name} · ${money(y.hourly_price)}/h)`).join(', ') }),
+            submissionBadge(s.status)
+          ]),
+          el('div', { class: 'muted', style: 'font-size:12px', text: `Gửi lúc ${time(s.created_at)}` }),
+          s.review_note ? el('div', { class: 'sub-note', text: `Ghi chú Admin: ${s.review_note}` }) : null
+        ])))
+      : el('p', { class: 'muted', style: 'margin:0', text: 'Chưa có yêu cầu thêm sân nào cho cơ sở này.' })
+  ]);
+
+  wrap.append(el('div', { class: 'two-col' }, [currentCard, el('div', {}, [addCard, pendingCard])]));
+  container.replaceChildren(wrap);
+}
+
 // ---- shell ----
 $('menu-toggle').addEventListener('click', () => { $('sidebar').classList.add('open'); $('backdrop').hidden = false; });
 $('backdrop').addEventListener('click', closeDrawer);
@@ -398,21 +669,38 @@ $('fill-demo').addEventListener('click', () => {
   $('login-form').identifier.value = 'owner@anta.vn';
   $('login-form').password.value = 'anta123456';
 });
+$('branch-select').addEventListener('change', () => {
+  currentBranch = $('branch-select').value || null;
+  if (currentBranch) store.set('branch', currentBranch);
+  go(current);
+  refreshStats();
+});
+
+async function loadBranchesAndSyncSelector() {
+  branches = await call('/owner/branches');
+  if (!branches.length) {
+    currentBranch = null;
+    $('branch-select').replaceChildren(el('option', { value: '', text: 'Chưa có cơ sở được duyệt' }));
+    $('branch-select').disabled = true;
+    return;
+  }
+  $('branch-select').disabled = false;
+  currentBranch = store.get('branch') && branches.some(b => b.id === store.get('branch')) ? store.get('branch') : branches[0].id;
+  $('branch-select').replaceChildren(...branches.map(b => el('option', { value: b.id, text: b.name })));
+  $('branch-select').value = currentBranch;
+}
 
 function signOut() { store.clear(); $('app').hidden = true; $('login').hidden = false; }
 async function start() {
   try {
-    const me = await call('/users/me');
-    branches = await call('/owner/branches');
-    if (!branches.length) throw new Error('Tài khoản này chưa được cấp quyền quản lý cơ sở nào.');
-    currentBranch = store.get('branch') && branches.some(b => b.id === store.get('branch')) ? store.get('branch') : branches[0].id;
-    $('branch-select').replaceChildren(...branches.map(b => el('option', { value: b.id, text: b.name })));
-    $('branch-select').value = currentBranch;
-    $('branch-select').addEventListener('change', () => { currentBranch = $('branch-select').value; store.set('branch', currentBranch); go(current); refreshStats(); });
+    const [me, sports] = await Promise.all([call('/users/me'), call('/public/sports').catch(() => [])]);
+    sportsList = Array.isArray(sports) ? sports : [];
+    await loadBranchesAndSyncSelector();
     $('who-name').textContent = me.identifier;
     $('who-avatar').textContent = (me.displayName || me.identifier || 'O').trim().charAt(0).toUpperCase();
     $('login').hidden = true; $('app').hidden = false; notify('');
-    await refreshStats(); await go('schedule');
+    await refreshStats();
+    await go(currentBranch ? 'schedule' : 'submit-branch');
   } catch (error) { signOut(); $('login-error').textContent = store.get('tried') ? error.message : ''; }
 }
 $('logout').addEventListener('click', async () => { try { await call('/auth/logout', 'POST'); } catch { /* session already gone */ } signOut(); });
