@@ -1,182 +1,362 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Anta Sports — Cổng Giao Diện Web</title>
-    <style>
-        :root {
-            --primary: #0284c7;
-            --primary-dark: #0369a1;
-            --slate: #334155;
-            --dark: #0f172a;
-            --light: #f8fafc;
-            --border: #e2e8f0;
-            --card-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            background: linear-gradient(135deg, #f0fdf4 0%, #f8fafc 50%, #f0f9ff 100%);
-            color: var(--dark);
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-        header {
-            background: #ffffff;
-            border-bottom: 1px solid var(--border);
-            padding: 1.25rem 2rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.03);
-        }
-        .brand {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            font-size: 1.35rem;
-            font-weight: 700;
-            color: var(--dark);
-        }
-        .brand-badge {
-            background: #e0f2fe;
-            color: var(--primary);
-            font-size: 0.75rem;
-            padding: 4px 10px;
-            border-radius: 9999px;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-        .container {
-            max-width: 900px;
-            margin: 3.5rem auto;
-            padding: 0 1.5rem;
-            flex: 1;
-        }
-        .hero {
-            text-align: center;
-            margin-bottom: 3rem;
-        }
-        .hero h1 {
-            font-size: 2.25rem;
-            font-weight: 800;
-            color: #0f172a;
-            margin-bottom: 0.75rem;
-        }
-        .hero p {
-            color: var(--slate);
-            font-size: 1.05rem;
-            max-width: 600px;
-            margin: 0 auto;
-        }
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2rem;
-        }
-        .portal-card {
-            background: #ffffff;
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 2rem;
-            box-shadow: var(--card-shadow);
-            transition: all 0.25s ease;
-            display: flex;
-            flex-direction: column;
-            text-decoration: none;
-            color: inherit;
-        }
-        .portal-card:hover {
-            transform: translateY(-4px);
-            border-color: var(--primary);
-            box-shadow: 0 20px 25px -5px rgba(2, 132, 199, 0.15);
-        }
-        .card-icon {
-            font-size: 2.5rem;
-            margin-bottom: 1rem;
-            display: inline-block;
-        }
-        .card-title {
-            font-size: 1.35rem;
-            font-weight: 700;
-            color: #0f172a;
-            margin-bottom: 0.5rem;
-        }
-        .card-desc {
-            color: var(--slate);
-            font-size: 0.95rem;
-            line-height: 1.5;
-            margin-bottom: 1.75rem;
-            flex: 1;
-        }
-        .btn-link {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0.75rem 1.5rem;
-            border-radius: 10px;
-            font-weight: 600;
-            font-size: 0.92rem;
-            background: var(--light);
-            color: var(--primary);
-            border: 1px solid var(--border);
-            transition: all 0.2s;
-        }
-        .portal-card:hover .btn-link {
-            background: var(--primary);
-            color: #ffffff;
-            border-color: var(--primary);
-        }
-        footer {
-            text-align: center;
-            padding: 2rem;
-            color: #64748b;
-            font-size: 0.88rem;
-            border-top: 1px solid var(--border);
-            background: #ffffff;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Anta Sports — Cổng Vận Hành & Quản Trị</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --teal: #12B5A6;
+      --blue: #1B7BB8;
+      --primary: #0A93A3;
+      --green: #3FAE3A;
+      --orange: #F58A1F;
+      --ink: #0F2533;
+      --muted: #566B76;
+      --bg: #F4FAFB;
+      --card: #FFFFFF;
+      --line: #DCE7EA;
+      --soft: #EDF6F8;
+      --shadow: 0 20px 45px -20px rgba(15, 37, 51, 0.16), 0 4px 14px -4px rgba(15, 37, 51, 0.06);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #E8F1F4;
+        --muted: #8FA6B2;
+        --bg: #0B1317;
+        --card: #121E24;
+        --line: #21323B;
+        --soft: #17272F;
+        --shadow: 0 24px 50px -20px rgba(0, 0, 0, 0.6);
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Be Vietnam Pro', system-ui, -apple-system, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(900px 480px at 12% -10%, rgba(18, 181, 166, 0.16), transparent 60%),
+        radial-gradient(850px 500px at 90% 8%, rgba(27, 123, 184, 0.14), transparent 58%),
+        var(--bg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.55;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      backdrop-filter: blur(12px);
+      background: color-mix(in srgb, var(--card) 86%, transparent);
+      border-bottom: 1px solid var(--line);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 800;
+      font-size: 1.15rem;
+      letter-spacing: -0.02em;
+    }
+    .brand-mark {
+      width: 38px;
+      height: 38px;
+      border-radius: 11px;
+      background: linear-gradient(135deg, var(--teal), var(--blue));
+      display: grid;
+      place-items: center;
+      color: #fff;
+      box-shadow: 0 8px 18px -6px rgba(10, 147, 163, 0.55);
+      flex: none;
+    }
+    .brand-sub {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--primary) 13%, transparent);
+      color: var(--primary);
+    }
+    .api-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12.5px;
+      color: var(--muted);
+      background: var(--soft);
+      border: 1px solid var(--line);
+      padding: 6px 12px;
+      border-radius: 999px;
+    }
+    .api-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 4px rgba(63, 174, 58, 0.18);
+    }
+    .api-pill code {
+      font-family: ui-monospace, Consolas, monospace;
+      color: var(--ink);
+      font-size: 12px;
+    }
+    main {
+      width: 100%;
+      max-width: 1020px;
+      margin: 0 auto;
+      padding: 54px 24px 64px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .hero {
+      text-align: center;
+      margin-bottom: 42px;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--primary);
+      margin-bottom: 18px;
+      box-shadow: 0 4px 12px -6px rgba(15, 37, 51, 0.12);
+    }
+    .hero h1 {
+      font-size: clamp(1.85rem, 3.6vw, 2.65rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.18;
+      margin-bottom: 14px;
+    }
+    .hero h1 span {
+      background: linear-gradient(135deg, var(--teal), var(--blue));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .hero p {
+      color: var(--muted);
+      font-size: 1.02rem;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+      gap: 24px;
+    }
+    .portal-card {
+      position: relative;
+      overflow: hidden;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 28px;
+      box-shadow: var(--shadow);
+      text-decoration: none;
+      color: inherit;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
+    }
+    .portal-card::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--teal), var(--blue));
+      opacity: 0.9;
+    }
+    .portal-card.admin-card::before {
+      background: linear-gradient(90deg, #0F2533, var(--blue));
+    }
+    .portal-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--primary);
+      box-shadow: 0 26px 50px -20px rgba(10, 147, 163, 0.28);
+    }
+    .card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .icon-box {
+      width: 52px;
+      height: 52px;
+      border-radius: 15px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, rgba(18, 181, 166, 0.16), rgba(27, 123, 184, 0.16));
+      color: var(--primary);
+    }
+    .admin-card .icon-box {
+      background: linear-gradient(135deg, rgba(27, 123, 184, 0.16), rgba(15, 37, 51, 0.14));
+      color: var(--blue);
+    }
+    .role-chip {
+      font-size: 11.5px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--soft);
+      color: var(--muted);
+      border: 1px solid var(--line);
+    }
+    .card-title {
+      font-size: 1.28rem;
+      font-weight: 700;
+      letter-spacing: -0.015em;
+      margin-bottom: 8px;
+    }
+    .card-desc {
+      color: var(--muted);
+      font-size: 0.94rem;
+      margin-bottom: 20px;
+    }
+    .feature-list {
+      list-style: none;
+      display: grid;
+      gap: 8px;
+      margin-bottom: 24px;
+      flex: 1;
+      font-size: 0.88rem;
+      color: var(--muted);
+    }
+    .feature-list li {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .feature-list li::before {
+      content: "✓";
+      color: var(--green);
+      font-weight: 800;
+    }
+    .btn-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 18px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 0.94rem;
+      background: var(--soft);
+      color: var(--primary);
+      border: 1px solid var(--line);
+      transition: all 0.2s ease;
+    }
+    .portal-card:hover .btn-link {
+      background: linear-gradient(135deg, var(--teal), var(--blue));
+      color: #fff;
+      border-color: transparent;
+      box-shadow: 0 10px 20px -10px rgba(10, 147, 163, 0.7);
+    }
+    footer {
+      text-align: center;
+      padding: 18px 24px;
+      color: var(--muted);
+      font-size: 0.84rem;
+      border-top: 1px solid var(--line);
+      background: color-mix(in srgb, var(--card) 85%, transparent);
+    }
+  </style>
 </head>
 <body>
-    <header>
-        <div class="brand">
-            <span>🏸 Anta Platform</span>
-            <span class="brand-badge">Web Portal</span>
+  <header>
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M5.6 5.6c3.8 3.2 3.8 9.6 0 12.8M18.4 5.6c-3.8 3.2-3.8 9.6 0 12.8"/>
+        </svg>
+      </div>
+      <span>Anta Sports</span>
+      <span class="brand-sub">Web Console</span>
+    </div>
+    <div class="api-pill">
+      <span class="api-dot"></span>
+      <span>API:</span>
+      <code id="api-url">/api/v1</code>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="eyebrow">Nền tảng đặt sân thể thao trực tuyến</div>
+      <h1>Cổng Vận Hành &amp; <span>Quản Trị Anta</span></h1>
+      <p>Chọn phân hệ phù hợp để điều phối lịch sân theo thời gian thực hoặc quản trị toàn bộ hệ thống đối tác.</p>
+    </section>
+
+    <div class="grid">
+      <a href="/owner/" class="portal-card">
+        <div class="card-top">
+          <div class="icon-box" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="2"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+              <line x1="12" y1="4" x2="12" y2="20"/>
+            </svg>
+          </div>
+          <span class="role-chip">Chủ sân · Branch Owner</span>
         </div>
-        <div style="font-size: 0.9rem; color: #64748b;">
-            Microservices API Gateway: <code>http://localhost:8080/api/v1</code>
+        <h2 class="card-title">Kênh Chủ Sân</h2>
+        <p class="card-desc">Bảng điều khiển vận hành hằng ngày cho từng cơ sở thể thao của bạn.</p>
+        <ul class="feature-list">
+          <li>Theo dõi lưới lịch đặt sân trực quan theo giờ</li>
+          <li>Khóa hoặc mở khung giờ bảo trì linh hoạt</li>
+          <li>Duyệt, từ chối và xem chi tiết thanh toán đơn đặt</li>
+        </ul>
+        <div class="btn-link">Mở Kênh Chủ Sân →</div>
+      </a>
+
+      <a href="/admin/" class="portal-card admin-card">
+        <div class="card-top">
+          <div class="icon-box" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2l7 4v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6l7-4z"/>
+              <path d="M9.5 12l1.8 1.8L15 10"/>
+            </svg>
+          </div>
+          <span class="role-chip">Hệ thống · Admin</span>
         </div>
-    </header>
+        <h2 class="card-title">Quản Trị Hệ Thống</h2>
+        <p class="card-desc">Trung tâm giám sát người dùng, phân quyền, giao dịch và kiểm toán nền tảng.</p>
+        <ul class="feature-list">
+          <li>Thống kê doanh thu, đơn đặt và người dùng hoạt động</li>
+          <li>Cấp &amp; thu hồi quyền chủ sân, nhân viên theo cơ sở</li>
+          <li>Xử lý hoàn tiền, đối soát giao dịch và nhật ký audit</li>
+        </ul>
+        <div class="btn-link">Mở Trang Quản Trị →</div>
+      </a>
+    </div>
+  </main>
 
-    <main class="container">
-        <section class="hero">
-            <h1>Cổng Giao Diện Web Anta</h1>
-            <p>Chọn phân hệ giao diện quản trị hoặc kênh vận hành chủ sân thể thao.</p>
-        </section>
-
-        <div class="grid">
-            <!-- Admin Portal -->
-            <a href="admin/index.html" class="portal-card">
-                <div class="card-icon">👑</div>
-                <h2 class="card-title">Anta — Quản Trị (Admin)</h2>
-                <p class="card-desc">Cổng dành cho Quản trị viên hệ thống Anta. Quản lý tài khoản, phân quyền, duyệt cơ sở và cấu hình nền tảng.</p>
-                <div class="btn-link">Truy cập Quản Trị →</div>
-            </a>
-
-            <!-- Owner Portal -->
-            <a href="owner/index.html" class="portal-card">
-                <div class="card-icon">🏟️</div>
-                <h2 class="card-title">Anta — Kênh Chủ Sân (Owner)</h2>
-                <p class="card-desc">Cổng dành riêng cho Chủ sân. Giám sát lịch đặt sân thực tế theo thời gian thực, duyệt đơn đặt, check-in và quản lý giá sân.</p>
-                <div class="btn-link">Truy cập Kênh Chủ Sân →</div>
-            </a>
-        </div>
-    </main>
-
-    <footer>
-        Dự án Anta Sports Platform &bull; Kiến trúc Microservices &copy; 2026
-    </footer>
+  <footer>
+    Anta Sports Platform &bull; Cloud Operations Console &copy; 2026
+  </footer>
+  <script>
+    document.getElementById('api-url').textContent = window.location.origin + '/api/v1';
+  </script>
 </body>
 </html>

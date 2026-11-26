@@ -4,51 +4,121 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>Anta — Kênh chủ sân</title>
-  <link rel="stylesheet" href="style.css">
+  <title>Anta Sports — Kênh chủ sân</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=20261126-2">
 </head>
 <body>
   <div id="login" class="login-wrap" hidden>
-    <div class="login-card">
-      <h1>Đăng nhập</h1>
-      <p class="sub" style="color:var(--muted)">Dùng tài khoản Anta đã được cấp quyền Chủ sân.</p>
-      <form id="login-form">
-        <label>Email hoặc số điện thoại <input name="identifier" autocomplete="username" required></label>
-        <label>Mật khẩu <input name="password" type="password" autocomplete="current-password" required></label>
-        <p id="login-error" class="error" role="alert"></p>
-        <button type="submit">Đăng nhập</button>
-      </form>
-      <p class="sub" style="color:var(--muted);margin-top:14px">Chưa có quyền chủ sân? Liên hệ quản trị viên Anta để được cấp quyền cho cơ sở của bạn.</p>
-      <p class="sub" style="color:var(--muted);margin-top:6px;font-size:12px">Tài khoản thử nghiệm: <code>owner@anta.vn</code> / <code>anta123456</code></p>
+    <div class="login-shell">
+      <div class="login-hero">
+        <div class="hero-brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"/>
+              <path d="M5.6 5.6c3.8 3.2 3.8 9.6 0 12.8M18.4 5.6c-3.8 3.2-3.8 9.6 0 12.8"/>
+            </svg>
+          </div>
+          <div>
+            <span class="hero-kicker">Anta Sports</span>
+            <strong>Kênh Chủ Sân</strong>
+          </div>
+        </div>
+        <h2>Điều phối lịch sân gọn gàng, không lo trùng giờ.</h2>
+        <p>Quản lý toàn bộ lịch đặt sân từ ứng dụng Anta, khóa giờ bảo trì và duyệt đơn thanh toán chỉ trên một màn hình.</p>
+        <ul class="hero-points">
+          <li>Lưới lịch sân trực quan theo từng môn và từng sân</li>
+          <li>Khóa khung giờ bảo trì hoặc sự kiện tức thì</li>
+          <li>Theo dõi hạn xác nhận và đối soát thanh toán rõ ràng</li>
+        </ul>
+        <a href="/portal/" class="back-home">← Quay lại cổng chọn web</a>
+      </div>
+
+      <div class="login-card">
+        <div class="login-head">
+          <span class="pill-badge">Branch Owner</span>
+          <h1>Đăng nhập chủ sân</h1>
+          <p class="sub">Dùng tài khoản Anta đã được cấp quyền Chủ sân.</p>
+        </div>
+        <form id="login-form">
+          <label>
+            <span>Email hoặc số điện thoại</span>
+            <input name="identifier" placeholder="owner@anta.vn" autocomplete="username" required>
+          </label>
+          <label>
+            <span>Mật khẩu</span>
+            <div class="pw-wrap">
+              <input id="pw-input" name="password" type="password" placeholder="••••••••" autocomplete="current-password" required>
+              <button type="button" id="toggle-pw" class="pw-toggle" aria-label="Hiện mật khẩu">Hiện</button>
+            </div>
+          </label>
+          <p id="login-error" class="error" role="alert"></p>
+          <button type="submit" class="btn-primary">Đăng nhập vào Kênh Chủ Sân</button>
+        </form>
+        <div class="demo-box">
+          <div>
+            <div class="demo-title">Tài khoản trải nghiệm</div>
+            <div class="demo-creds"><code>owner@anta.vn</code> / <code>anta123456</code></div>
+          </div>
+          <button type="button" id="fill-demo" class="ghost small">Điền nhanh</button>
+        </div>
+        <p class="help-note">Chưa có quyền chủ sân? Liên hệ quản trị viên Anta để được cấp quyền cho cơ sở của bạn.</p>
+      </div>
     </div>
   </div>
+
   <div id="app" hidden>
-    <aside>
-      <div class="brand">🏸 Anta</div>
+    <header class="mobile-bar">
+      <button type="button" id="menu-toggle" class="ghost small" aria-label="Mở menu">☰ Menu</button>
+      <div class="brand-inline">Anta · Kênh chủ sân</div>
+    </header>
+    <div id="backdrop" class="side-backdrop" hidden></div>
+
+    <aside id="sidebar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M5.6 5.6c3.8 3.2 3.8 9.6 0 12.8M18.4 5.6c-3.8 3.2-3.8 9.6 0 12.8"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-name">Anta Sports</div>
+          <div class="brand-sub">Kênh chủ sân</div>
+        </div>
+      </div>
+
       <div class="branch-pick">
-        <label>Cơ sở đang quản lý
+        <label>
+          <span>Cơ sở đang quản lý</span>
           <select id="branch-select"></select>
         </label>
       </div>
-      <div>
+
+      <div class="nav-sections">
         <div class="nav-group">Vận hành</div>
         <nav class="side" id="nav-ops"></nav>
-        <div class="nav-group" style="margin-top:14px">Cơ sở</div>
+        <div class="nav-group" style="margin-top:16px">Cơ sở</div>
         <nav class="side" id="nav-facility"></nav>
       </div>
+
       <div class="who-box">
-        <div style="flex:1">
+        <div class="avatar" id="who-avatar" aria-hidden="true">O</div>
+        <div class="who-meta">
           <span class="who-name" id="who-name"></span>
           <span class="who-role">Chủ sân</span>
         </div>
-        <button id="logout" class="ghost small">Đăng xuất</button>
+        <button id="logout" class="ghost small" title="Đăng xuất">Thoát</button>
       </div>
     </aside>
+
     <main>
       <p id="notice" class="notice" role="status" hidden></p>
       <div id="view"></div>
     </main>
   </div>
-  <script src="app.js"></script>
+  <script src="app.js?v=20261126-2"></script>
 </body>
 </html>

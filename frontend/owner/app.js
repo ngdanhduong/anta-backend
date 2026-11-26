@@ -3,7 +3,7 @@
 // parsed as HTML. Every write goes through /api/v1/owner/* — the server re-checks branch ownership on every call.
 const API = '/api/v1';
 const $ = id => document.getElementById(id);
-const store = { get: k => sessionStorage.getItem(k), set: (k, v) => sessionStorage.setItem(k, v), clear: () => sessionStorage.clear() };
+const store = { get: k => sessionStorage.getItem('owner_' + k), set: (k, v) => sessionStorage.setItem('owner_' + k, v), clear: () => ['access', 'refresh', 'tried', 'branch'].forEach(k => sessionStorage.removeItem('owner_' + k)) };
 
 function el(tag, props = {}, children = []) {
   const node = document.createElement(tag);
@@ -11,11 +11,41 @@ function el(tag, props = {}, children = []) {
     if (k === 'class') node.className = v;
     else if (k === 'on') for (const [name, fn] of Object.entries(v)) node.addEventListener(name, fn);
     else if (k === 'text') node.textContent = v;
-    else node.setAttribute(k, v);
+    else if (v !== null && v !== undefined) node.setAttribute(k, v);
   }
-  for (const child of [].concat(children)) if (child !== null && child !== undefined) node.append(child);
+  const flat = Array.isArray(children) ? children.flat(Infinity) : [children];
+  for (const child of flat) if (child !== null && child !== undefined) node.append(child);
   return node;
 }
+
+function svgIcon(paths) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '16');
+  svg.setAttribute('height', '16');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  for (const d of paths) {
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', d);
+    svg.appendChild(p);
+  }
+  return svg;
+}
+
+const NAV_ICONS = {
+  stats: ['M3 3v18h18', 'M18 17V9', 'M13 17V5', 'M8 17v-3'],
+  schedule: ['M8 2v4', 'M16 2v4', 'M3 10h18', 'M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z'],
+  bookings: ['M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2', 'M9 3h6v4H9z', 'M9 12h6', 'M9 16h4'],
+  cancellations: ['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z', 'M15 9l-6 6', 'M9 9l6 6'],
+  courts: ['M3 5h18v14H3z', 'M12 5v14', 'M3 12h18'],
+  services: ['M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z', 'M3 6h18', 'M16 10a4 4 0 0 1-8 0'],
+  cashflow: ['M12 1v22', 'M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6']
+};
+
 async function call(path, method = 'GET', body, retried = false) {
   const response = await fetch(API + path, { method, body: body === undefined ? undefined : JSON.stringify(body),
     headers: { 'Content-Type': 'application/json', ...(store.get('access') ? { Authorization: 'Bearer ' + store.get('access') } : {}) } });
@@ -35,14 +65,11 @@ function notify(message, bad = false) {
 const money = v => v === null || v === undefined ? '—' : Number(v).toLocaleString('vi-VN') + ' đ';
 const time = v => v ? new Date(v).toLocaleString('vi-VN') : '—';
 const hhmm = v => v ? new Date(v).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '—';
-const short = v => v ? String(v).slice(0, 8).toUpperCase() : '—';
+const short = v => v ? String(v).replace(/^ANTA-BK-/i, '').slice(0, 8).toUpperCase() : '—';
 const dateInput = d => d.toISOString().slice(0, 10);
 
-// Only the statuses the backend actually tracks are labelled; nothing here is invented beyond that model.
 const STATUS_LABEL = { PENDING_PAYMENT: 'Chờ thanh toán', PENDING_OWNER_CONFIRMATION: 'Chờ xác nhận',
   CONFIRMED: 'Đã xác nhận', CANCELLED: 'Đã hủy', EXPIRED: 'Hết hạn thanh toán' };
-/** CONFIRMED is shown as "Đang chơi"/"Hoàn thành" based on the slot's own time — a display-only reading
- * of the stored status and the booking's start/end time, never a separate stored state. */
 function displayStatus(row) {
   if (row.status === 'CONFIRMED') {
     const now = Date.now(), start = Date.parse(row.starts_at), end = Date.parse(row.ends_at);
@@ -54,7 +81,7 @@ function displayStatus(row) {
 }
 function tag(row) { const s = displayStatus(row); return el('span', { class: 'tag ' + s.cls, text: s.text }); }
 function table(columns, rows) {
-  if (!rows.length) return el('p', { class: 'muted', text: 'Không có dữ liệu.' });
+  if (!rows.length) return el('div', { class: 'card' }, el('p', { class: 'muted', style: 'margin:0', text: 'Không có dữ liệu phù hợp.' }));
   const head = el('tr', {}, columns.map(c => el('th', { text: c.title })));
   const body = rows.map(row => el('tr', {}, columns.map(c => {
     const value = c.render(row);
@@ -100,22 +127,31 @@ const NAV = { operations: [['stats', 'Thống kê'], ['schedule', 'Lịch sân']
 const IMPLEMENTED = new Set(['schedule', 'bookings']);
 let current = 'schedule';
 
+function closeDrawer() {
+  $('sidebar').classList.remove('open');
+  $('backdrop').hidden = true;
+}
+
 function renderNav() {
   const build = (items, target) => $(target).replaceChildren(...items.map(([key, label]) => {
-    const btn = el('button', {}, [el('span', { text: label })]);
+    const icon = svgIcon(NAV_ICONS[key] || NAV_ICONS.schedule);
+    const btn = el('button', {}, [el('span', { class: 'nav-label' }, [icon, el('span', { text: label })])]);
     if (key === 'bookings' && stats?.pendingConfirmation) btn.append(el('span', { class: 'badge', text: String(stats.pendingConfirmation) }));
     btn.toggleAttribute('aria-current', key === current); if (key === current) btn.setAttribute('aria-current', 'page');
-    btn.addEventListener('click', () => go(key));
+    btn.addEventListener('click', () => { closeDrawer(); go(key); });
     return btn;
   }));
   build(NAV.operations, 'nav-ops'); build(NAV.facility, 'nav-facility');
 }
 async function go(view, extra) {
   current = view; renderNav();
-  const container = $('view'); container.replaceChildren(el('p', { class: 'muted', text: 'Đang tải…' }));
+  const container = $('view'); container.replaceChildren(el('div', { class: 'card' }, el('p', { class: 'muted', style: 'margin:0', text: 'Đang tải dữ liệu…' })));
   if (!IMPLEMENTED.has(view) && view !== 'detail') {
-    container.replaceChildren(el('div', { class: 'card' }, el('p', { class: 'muted',
-      text: 'Màn hình này chưa thuộc phạm vi triển khai giai đoạn đầu (ưu tiên Lịch sân, Đơn đặt, Chi tiết đơn, Xác nhận/Từ chối đơn).' })));
+    container.replaceChildren(el('div', { class: 'card' }, [
+      el('h3', { text: 'Phân hệ đang phát triển' }),
+      el('p', { class: 'muted', style: 'margin:0',
+        text: 'Màn hình này chưa thuộc phạm vi triển khai giai đoạn đầu (hiện hỗ trợ Lịch sân, Khóa/mở giờ, Đơn đặt, Chi tiết đơn và Xác nhận/Từ chối đơn).' })
+    ]));
     return;
   }
   try {
@@ -136,7 +172,7 @@ async function renderSchedule(container) {
   const wrap = el('div');
   wrap.append(el('div', { class: 'page-head' }, [
     el('div', {}, [el('h2', { text: 'Lịch sân' }),
-      el('div', { class: 'sub', text: `${data.branch.name}. Mở cửa ${String(data.branch.openingHour).padStart(2, '0')}:00 đến ${String(data.branch.closingHour).padStart(2, '0')}:00` })]),
+      el('div', { class: 'sub', text: `${data.branch.name} · Mở cửa ${String(data.branch.openingHour).padStart(2, '0')}:00 – ${String(data.branch.closingHour).padStart(2, '0')}:00` })]),
     el('div', { class: 'actions' }, [
       el('button', { class: 'ghost', text: '🔒 Khóa khung giờ', on: { click: () => openBlockModal(data) } }),
       el('button', { text: '＋ Tạo đơn tại quầy', on: { click: () => notAvailableYet('Tạo đơn tại quầy') } })])
@@ -156,8 +192,8 @@ async function renderSchedule(container) {
 
   const sports = [...new Map(data.courts.map(c => [c.sport_id, c.sport_name])).entries()];
   const sportTabs = el('div', { class: 'sport-tabs' }, [
-    tabButton(`Tất cả ${data.courts.length}`, !scheduleState.sportId, () => { scheduleState.sportId = ''; go('schedule'); }),
-    ...sports.map(([id, name]) => tabButton(`${name} ${data.courts.filter(c => c.sport_id === id).length}`,
+    tabButton(`Tất cả (${data.courts.length})`, !scheduleState.sportId, () => { scheduleState.sportId = ''; go('schedule'); }),
+    ...sports.map(([id, name]) => tabButton(`${name} (${data.courts.filter(c => c.sport_id === id).length})`,
       scheduleState.sportId === id, () => { scheduleState.sportId = id; go('schedule'); }))]);
 
   wrap.append(el('div', { class: 'schedule-toolbar' }, [dateNav, sportTabs]));
@@ -168,31 +204,33 @@ function tabButton(text, activeNow, onClick) {
   const b = el('button', { text, on: { click: onClick } }); if (activeNow) b.setAttribute('aria-current', 'page'); return b;
 }
 function renderGrid(data) {
-  const opening = data.branch.openingHour, closing = data.branch.closingHour, hourPx = 46;
-  const dayStart = new Date(scheduleState.date + 'T00:00:00+07:00'); // display only; positions use each slot's own clock time
+  const opening = data.branch.openingHour, closing = data.branch.closingHour, hourPx = 48;
   const minutesFromOpening = iso => {
     const d = new Date(iso); const local = new Date(d.toLocaleString('en-US', { timeZone: data.branch.timezone }));
     return (local.getHours() - opening) * 60 + local.getMinutes();
   };
-  const timeCol = el('div', { style: 'width:60px;flex:none' }, [el('div', { class: 'corner', style: `height:44px` }),
+  const timeCol = el('div', { style: 'width:64px;flex:none' }, [el('div', { class: 'corner', style: `height:50px` }),
     ...Array.from({ length: closing - opening }, (_, i) => el('div', { class: 'time-label', style: `height:${hourPx}px;line-height:${hourPx}px`, text: `${String(opening + i).padStart(2, '0')}:00` }))]);
   const columns = [timeCol];
   for (const court of data.courts) {
     const body = el('div', { style: `position:relative;height:${(closing - opening) * hourPx}px` });
+    for (let i = 0; i < closing - opening; i++) {
+      body.append(el('div', { style: `position:absolute;left:0;right:0;top:${i * hourPx}px;height:${hourPx}px;border-top:1px solid var(--line);pointer-events:none` }));
+    }
     const items = [...data.bookings.filter(b => b.yard_id === court.court_id).map(b => ({ ...b, kind: 'booking' })),
       ...data.blocks.filter(b => b.yard_id === court.court_id).map(b => ({ ...b, kind: 'block' }))];
     for (const item of items) {
       const top = Math.max(0, minutesFromOpening(item.starts_at)) / 60 * hourPx;
-      const height = Math.max(20, (minutesFromOpening(item.ends_at) - minutesFromOpening(item.starts_at)) / 60 * hourPx - 2);
+      const height = Math.max(24, (minutesFromOpening(item.ends_at) - minutesFromOpening(item.starts_at)) / 60 * hourPx - 4);
       const cls = item.kind === 'block' ? 'locked' : { PENDING_PAYMENT: 'pending', PENDING_OWNER_CONFIRMATION: 'wait', CONFIRMED: 'confirmed' }[item.status] || 'pending';
-      const card = el('div', { class: 'booking-card ' + cls, style: `top:${top}px;height:${height}px` }, [
+      const card = el('div', { class: 'booking-card ' + cls, style: `top:${top + 2}px;height:${height}px` }, [
         el('b', { text: item.kind === 'block' ? '🔒 Đã khóa' : (item.customer_name || item.customer_contact) }),
         el('span', { text: `${hhmm(item.starts_at)}–${hhmm(item.ends_at)}` })]);
       card.addEventListener('click', () => item.kind === 'block' ? confirmReleaseBlock(item) : go('detail', { id: item.id }));
       body.append(card);
     }
-    columns.push(el('div', { style: 'flex:1;min-width:150px;border-left:1px solid var(--line)' },
-      [el('div', { class: 'court-head', text: court.name }, [el('span', { class: 'sport', text: court.sport_name })]), body]));
+    columns.push(el('div', { style: 'flex:1;min-width:160px;border-left:1px solid var(--line)' },
+      [el('div', { class: 'court-head', style: 'height:50px', text: court.name }, [el('span', { class: 'sport', text: court.sport_name })]), body]));
   }
   const grid = el('div', { class: 'schedule-grid', style: 'display:flex' }, columns);
   const legend = el('div', { class: 'legend' }, [
@@ -208,9 +246,9 @@ function openBlockModal(data) {
   const startF = el('input', { type: 'time', value: '10:00' }), endF = el('input', { type: 'time', value: '12:00' });
   const reasonF = el('textarea', { rows: 3, placeholder: 'Ví dụ: bảo trì đèn, thay thảm sân' });
   modal('Khóa khung giờ', [
-    el('label', {}, ['Sân cần khóa', courtSel]), el('label', {}, ['Ngày', dateF]),
-    el('div', { style: 'display:flex;gap:10px' }, [el('label', { style: 'flex:1' }, ['Giờ bắt đầu', startF]), el('label', { style: 'flex:1' }, ['Giờ kết thúc', endF])]),
-    el('label', {}, ['Lý do khóa', reasonF])
+    el('label', {}, [el('span', { text: 'Sân cần khóa' }), courtSel]), el('label', {}, [el('span', { text: 'Ngày' }), dateF]),
+    el('div', { style: 'display:flex;gap:10px' }, [el('label', { style: 'flex:1' }, [el('span', { text: 'Giờ bắt đầu' }), startF]), el('label', { style: 'flex:1' }, [el('span', { text: 'Giờ kết thúc' }), endF])]),
+    el('label', {}, [el('span', { text: 'Lý do khóa' }), reasonF])
   ], { confirmText: 'Khóa khung giờ', onConfirm: async () => {
     const startsAt = toOffsetIso(dateF.value, startF.value), endsAt = toOffsetIso(dateF.value, endF.value);
     await call(`/owner/courts/${courtSel.value}/blocks`, 'POST', { startsAt, endsAt, reason: reasonF.value.trim() || 'Bảo trì sân' });
@@ -241,28 +279,29 @@ async function renderBookings(container) {
   wrap.append(el('div', { class: 'stats' }, [
     statCard(s.pendingConfirmation, 'Chờ xác nhận'), statCard(s.today, 'Hôm nay'), statCard(s.upcoming, 'Sắp tới'), statCard(s.cancelledThisWeek, 'Đã hủy tuần này')]));
 
-  const q = el('input', { placeholder: 'Tìm tên, số điện thoại hoặc mã đơn', value: bookingState.q || '' });
+  const q = el('input', { placeholder: 'Tìm tên, SĐT hoặc mã đơn', value: bookingState.q || '' });
   const from = el('input', { type: 'date', value: bookingState.fromDate || '' }), to = el('input', { type: 'date', value: bookingState.toDate || '' });
   const status = selectEl({ '': 'Mọi trạng thái', PENDING_PAYMENT: 'Chờ thanh toán', PENDING_OWNER_CONFIRMATION: 'Chờ xác nhận',
     CONFIRMED: 'Đã xác nhận', CANCELLED: 'Đã hủy', EXPIRED: 'Hết hạn' }, bookingState.status || '');
   const source = selectEl({ '': 'Mọi nguồn', APP: 'App Anta', COUNTER: 'Tại quầy' }, bookingState.source || '');
   const apply = () => { Object.assign(bookingState, { q: q.value.trim(), fromDate: from.value, toDate: to.value, status: status.value, source: source.value, page: 1 }); go('bookings'); };
   const form = el('form', { class: 'toolbar', on: { submit: e => { e.preventDefault(); apply(); } } },
-    [el('label', {}, ['Tìm kiếm', q]), el('label', {}, ['Từ ngày', from]), el('label', {}, ['Đến ngày', to]),
-      el('label', {}, ['Trạng thái', status]), el('label', {}, ['Nguồn đặt', source]), el('button', { type: 'submit', text: 'Lọc' }),
+    [el('label', {}, [el('span', { text: 'Tìm kiếm' }), q]), el('label', {}, [el('span', { text: 'Từ ngày' }), from]), el('label', {}, [el('span', { text: 'Đến ngày' }), to]),
+      el('label', {}, [el('span', { text: 'Trạng thái' }), status]), el('label', {}, [el('span', { text: 'Nguồn đặt' }), source]), el('button', { type: 'submit', text: 'Lọc' }),
       el('button', { type: 'button', class: 'ghost', text: 'Xóa lọc', on: { click: () => { bookingState = { page: 1 }; go('bookings'); } } })]);
   wrap.append(form);
 
   wrap.append(table([
-    { title: 'Mã đơn', render: r => short(r.id) }, { title: 'Khách hàng', wrap: true, render: r => el('div', {}, [el('div', { text: r.customer_name }), el('div', { class: 'muted', text: r.customer_contact })]) },
+    { title: 'Mã đơn', render: r => el('code', { text: short(r.id) }) },
+    { title: 'Khách hàng', wrap: true, render: r => el('div', {}, [el('div', { style: 'font-weight:600', text: r.customer_name }), el('div', { class: 'muted', style: 'font-size:12px', text: r.customer_contact })]) },
     { title: 'Sân', render: r => r.yard_name }, { title: 'Ngày chơi', render: r => new Date(r.starts_at).toLocaleDateString('vi-VN') },
-    { title: 'Giờ chơi', render: r => `${hhmm(r.starts_at)}–${hhmm(r.ends_at)}` }, { title: 'Tổng tiền', render: r => money(r.amount) },
+    { title: 'Giờ chơi', render: r => `${hhmm(r.starts_at)}–${hhmm(r.ends_at)}` }, { title: 'Tổng tiền', render: r => el('strong', { text: money(r.amount) }) },
     { title: 'Nguồn', render: r => r.source === 'COUNTER' ? 'Tại quầy' : 'App Anta' }, { title: 'Trạng thái', render: r => tag(r) },
-    { title: '', render: r => { const b = el('button', { class: 'small ghost', text: 'Xem' }); b.addEventListener('click', () => go('detail', { id: r.id })); return b; } }
+    { title: '', render: r => { const b = el('button', { class: 'small ghost', text: 'Chi tiết →' }); b.addEventListener('click', () => go('detail', { id: r.id })); return b; } }
   ], list.items));
 
   const pages = Math.max(1, Math.ceil(list.total / list.pageSize));
-  if (pages > 1) wrap.append(el('div', { class: 'actions', style: 'margin-top:10px' }, [
+  if (pages > 1) wrap.append(el('div', { class: 'actions', style: 'margin-top:14px;justify-content:flex-end;align-items:center' }, [
     el('button', { class: 'ghost small', text: '‹ Trước', disabled: list.page <= 1 ? 'disabled' : null, on: { click: () => { bookingState.page = list.page - 1; go('bookings'); } } }),
     el('span', { class: 'muted', text: `Trang ${list.page}/${pages}` }),
     el('button', { class: 'ghost small', text: 'Sau ›', disabled: list.page >= pages ? 'disabled' : null, on: { click: () => { bookingState.page = list.page + 1; go('bookings'); } } })]));
@@ -284,13 +323,13 @@ async function renderDetail(container, extra) {
   left.append(el('div', { class: 'card' }, [el('h3', { text: 'Thông tin đặt sân' }),
     el('dl', { class: 'rows' }, [
       dRow('Sân', `${row.yard_name}, ${row.sport_name}`), dRow('Ngày chơi', new Date(row.starts_at).toLocaleDateString('vi-VN')),
-      dRow('Giờ chơi', `${hhmm(row.starts_at)} đến ${hhmm(row.ends_at)}, ${row.hours} giờ`), dRow('Giá sân theo giờ', money(row.hourly_price)),
+      dRow('Giờ chơi', `${hhmm(row.starts_at)} – ${hhmm(row.ends_at)} (${row.hours} giờ)`), dRow('Giá sân theo giờ', money(row.hourly_price)),
       dRow('Nguồn đặt', row.source === 'COUNTER' ? 'Tại quầy' : 'App Anta')])]));
   left.append(el('div', { class: 'card' }, [el('h3', { text: 'Khách hàng' }),
     el('dl', { class: 'rows' }, [dRow('Tên khách', row.customer_name), dRow('Liên hệ', row.customer_contact)])]));
   left.append(costCard(row));
   if (row.statusHistory?.length) left.append(el('div', { class: 'card' }, [el('h3', { text: 'Lịch sử thao tác' }),
-    el('ul', { style: 'margin:0;padding-left:18px' }, row.statusHistory.map(h => el('li', { text: `${time(h.created_at)}: ${h.from_status || '—'} → ${h.to_status}${h.reason ? ' (' + h.reason + ')' : ''}` })))]));
+    el('ul', { style: 'margin:0;padding-left:18px;display:grid;gap:6px' }, row.statusHistory.map(h => el('li', { text: `${time(h.created_at)}: ${h.from_status || '—'} → ${h.to_status}${h.reason ? ' (' + h.reason + ')' : ''}` })))]));
 
   const right = el('div');
   right.append(statusCard(row));
@@ -305,13 +344,12 @@ function costCard(row) {
   const t = el('table', { class: 'cost-table' }, [
     el('thead', {}, el('tr', {}, ['Khoản mục', 'Số lượng', 'Đơn giá', 'Thành tiền'].map(h => el('th', { text: h })))),
     el('tbody', {}, rows.map(r => el('tr', {}, r.map(v => el('td', { text: v })))))]);
-  return el('div', { class: 'card' }, [el('h3', { text: 'Dịch vụ kèm theo và thanh toán' }), t,
-    el('dl', { class: 'rows', style: 'margin-top:10px' }, [
+  return el('div', { class: 'card' }, [el('h3', { text: 'Dịch vụ kèm theo và thanh toán' }), el('div', { class: 'table-wrap', style: 'box-shadow:none' }, t),
+    el('dl', { class: 'rows', style: 'margin-top:14px' }, [
       dRow('Tổng cộng', money(row.amount)), dRow('Đã thanh toán', money(row.paidAmount)), dRow('Còn phải thu tại sân', money(row.outstanding))])]);
 }
 function statusCard(row) {
-  const s = displayStatus(row);
-  const card = el('div', { class: 'card' }, [el('h3', { text: 'Trạng thái' }), el('div', { style: 'margin-bottom:10px' }, tag(row))]);
+  const card = el('div', { class: 'card' }, [el('h3', { text: 'Trạng thái đơn' }), el('div', { style: 'margin-bottom:12px' }, tag(row))]);
   if (row.status === 'PENDING_OWNER_CONFIRMATION') {
     const note = el('p', {}, ['Khách đã thanh toán. ', row.canConfirm
       ? el('span', { class: 'countdown', text: `Còn ${remaining(row.confirm_deadline_at)} để xác nhận.` })
@@ -322,12 +360,12 @@ function statusCard(row) {
     const rejectBtn = el('button', { class: 'danger', text: 'Từ chối đơn' });
     rejectBtn.addEventListener('click', () => openRejectModal(row));
     card.append(el('div', { class: 'actions' }, [confirmBtn, rejectBtn]),
-      el('p', { class: 'muted', style: 'margin-top:8px', text: 'Từ chối thì phải ghi lý do. Khách nhận lại toàn bộ số tiền đã trả.' }));
+      el('p', { class: 'muted', style: 'margin-top:10px;font-size:12.5px', text: 'Từ chối thì phải ghi lý do. Khách nhận lại toàn bộ số tiền đã trả.' }));
   } else if (row.refund) {
     card.append(el('p', {}, [`Hoàn tiền: ${money(row.refund.amount)} (${row.refund.percent}%) — `, el('span', { class: 'tag ' + (row.refund.status === 'SUCCEEDED' ? 'ok' : 'pending'), text: row.refund.status }),
       row.refund.reason ? el('div', { class: 'muted', text: row.refund.reason }) : null]));
   } else {
-    card.append(el('p', { class: 'muted', text: 'Không còn thao tác nào khả dụng cho trạng thái này.' }));
+    card.append(el('p', { class: 'muted', style: 'margin:0', text: 'Không còn thao tác nào khả dụng cho trạng thái này.' }));
   }
   return card;
 }
@@ -339,7 +377,7 @@ function remaining(deadline) {
 function openRejectModal(row) {
   const reasonF = el('textarea', { rows: 3, placeholder: 'Ví dụ: sân đang bảo trì đột xuất, trùng lịch do lỗi hệ thống…' });
   modal('Từ chối đơn', [el('p', {}, [`Đơn ${short(row.id)} của ${row.customer_name}. Khách sẽ được hoàn lại toàn bộ ${money(row.amount)}.`]),
-    el('label', {}, ['Lý do từ chối (bắt buộc)', reasonF])], { confirmText: 'Từ chối đơn và hoàn tiền', danger: true, onConfirm: async () => {
+    el('label', {}, [el('span', { text: 'Lý do từ chối (bắt buộc)' }), reasonF])], { confirmText: 'Từ chối đơn và hoàn tiền', danger: true, onConfirm: async () => {
     const reason = reasonF.value.trim();
     if (!reason) throw new Error('Vui lòng nhập lý do từ chối.');
     await call(`/owner/bookings/${row.id}/reject`, 'POST', { reason });
@@ -348,6 +386,19 @@ function openRejectModal(row) {
 }
 
 // ---- shell ----
+$('menu-toggle').addEventListener('click', () => { $('sidebar').classList.add('open'); $('backdrop').hidden = false; });
+$('backdrop').addEventListener('click', closeDrawer);
+$('toggle-pw').addEventListener('click', () => {
+  const pw = $('pw-input');
+  const show = pw.type === 'password';
+  pw.type = show ? 'text' : 'password';
+  $('toggle-pw').textContent = show ? 'Ẩn' : 'Hiện';
+});
+$('fill-demo').addEventListener('click', () => {
+  $('login-form').identifier.value = 'owner@anta.vn';
+  $('login-form').password.value = 'anta123456';
+});
+
 function signOut() { store.clear(); $('app').hidden = true; $('login').hidden = false; }
 async function start() {
   try {
@@ -359,6 +410,7 @@ async function start() {
     $('branch-select').value = currentBranch;
     $('branch-select').addEventListener('change', () => { currentBranch = $('branch-select').value; store.set('branch', currentBranch); go(current); refreshStats(); });
     $('who-name').textContent = me.identifier;
+    $('who-avatar').textContent = (me.displayName || me.identifier || 'O').trim().charAt(0).toUpperCase();
     $('login').hidden = true; $('app').hidden = false; notify('');
     await refreshStats(); await go('schedule');
   } catch (error) { signOut(); $('login-error').textContent = store.get('tried') ? error.message : ''; }

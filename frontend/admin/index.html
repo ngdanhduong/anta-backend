@@ -4,34 +4,119 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>Anta — Quản trị</title>
-  <link rel="stylesheet" href="style.css">
+  <title>Anta Sports — Quản trị hệ thống</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=20261126-2">
 </head>
 <body>
-  <section id="login" class="card login" hidden>
-    <h1>Quản trị Anta</h1>
-    <p class="muted">Đăng nhập bằng tài khoản có quyền <code>admin</code>.</p>
-    <form id="login-form">
-      <label>Email hoặc số điện thoại <input name="identifier" autocomplete="username" required></label>
-      <label>Mật khẩu <input name="password" type="password" autocomplete="current-password" required></label>
-      <button type="submit">Đăng nhập</button>
-      <p id="login-error" class="error" role="alert"></p>
-      <p class="muted" style="margin-top:8px;font-size:12px">Tài khoản thử nghiệm: <code>admin@anta.vn</code> / <code>anta123456</code></p>
-    </form>
+  <section id="login" class="login-wrap" hidden>
+    <div class="login-shell">
+      <div class="login-hero">
+        <div class="hero-brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2l7 4v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6l7-4z"/>
+              <path d="M9.5 12l1.8 1.8L15 10"/>
+            </svg>
+          </div>
+          <div>
+            <span class="hero-kicker">Anta Sports</span>
+            <strong>Quản Trị Hệ Thống</strong>
+          </div>
+        </div>
+        <h2>Giám sát toàn sàn, phân quyền &amp; đối soát minh bạch.</h2>
+        <p>Quản trị tập trung tài khoản đối tác, toàn bộ đơn đặt sân, giao dịch thanh toán, hoàn tiền và nhật ký kiểm toán.</p>
+        <ul class="hero-points">
+          <li>Theo dõi tổng quan doanh thu &amp; giao dịch thời gian thực</li>
+          <li>Cấp và thu hồi quyền admin, hỗ trợ, chủ sân tức thì</li>
+          <li>Xử lý hoàn tiền, đối soát tiền đến muộn và audit log</li>
+        </ul>
+        <a href="/portal/" class="back-home">← Quay lại cổng chọn web</a>
+      </div>
+
+      <div class="login-card">
+        <div class="login-head">
+          <span class="pill-badge">System Admin</span>
+          <h1>Đăng nhập quản trị</h1>
+          <p class="sub">Đăng nhập bằng tài khoản có quyền <code>admin</code>.</p>
+        </div>
+        <form id="login-form">
+          <label>
+            <span>Email hoặc số điện thoại</span>
+            <input name="identifier" placeholder="admin@anta.vn" autocomplete="username" required>
+          </label>
+          <label>
+            <span>Mật khẩu</span>
+            <div class="pw-wrap">
+              <input id="pw-input" name="password" type="password" placeholder="••••••••" autocomplete="current-password" required>
+              <button type="button" id="toggle-pw" class="pw-toggle" aria-label="Hiện mật khẩu">Hiện</button>
+            </div>
+          </label>
+          <p id="login-error" class="error" role="alert"></p>
+          <button type="submit" class="btn-primary">Đăng nhập Quản trị</button>
+        </form>
+        <div class="demo-box">
+          <div>
+            <div class="demo-title">Tài khoản thử nghiệm</div>
+            <div class="demo-creds"><code>admin@anta.vn</code> / <code>anta123456</code></div>
+          </div>
+          <button type="button" id="fill-demo" class="ghost small">Điền nhanh</button>
+        </div>
+      </div>
+    </div>
   </section>
+
   <div id="app" hidden>
-    <header>
-      <strong>Anta — Quản trị</strong>
-      <nav id="tabs"></nav>
-      <span id="who" class="muted"></span>
-      <button id="logout" class="ghost">Đăng xuất</button>
+    <header class="mobile-bar">
+      <button type="button" id="menu-toggle" class="ghost small" aria-label="Mở menu">☰ Menu</button>
+      <div class="brand-inline">Anta · Quản trị</div>
     </header>
+    <div id="backdrop" class="side-backdrop" hidden></div>
+
+    <aside id="sidebar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2l7 4v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6l7-4z"/>
+            <path d="M9.5 12l1.8 1.8L15 10"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-name">Anta Sports</div>
+          <div class="brand-sub">Admin Console</div>
+        </div>
+      </div>
+
+      <div class="nav-sections">
+        <div class="nav-group">Điều hành sàn</div>
+        <nav id="tabs" class="side"></nav>
+      </div>
+
+      <div class="who-box">
+        <div class="avatar" id="who-avatar" aria-hidden="true">A</div>
+        <div class="who-meta">
+          <span class="who-name" id="who"></span>
+          <span class="who-role">Quản trị viên</span>
+        </div>
+        <button id="logout" class="ghost small" title="Đăng xuất">Thoát</button>
+      </div>
+    </aside>
+
     <main>
+      <div class="page-head">
+        <div>
+          <h2 id="page-title">Tổng quan</h2>
+          <div id="page-sub" class="sub">Số liệu vận hành và đối soát toàn hệ thống Anta</div>
+        </div>
+        <button type="button" id="refresh-btn" class="ghost small">↻ Làm mới</button>
+      </div>
       <p id="notice" class="notice" role="status" hidden></p>
-      <div id="toolbar" class="toolbar"></div>
+      <div id="toolbar" class="toolbar-host"></div>
       <div id="view"></div>
     </main>
   </div>
-  <script src="app.js"></script>
+  <script src="app.js?v=20261126-2"></script>
 </body>
 </html>
