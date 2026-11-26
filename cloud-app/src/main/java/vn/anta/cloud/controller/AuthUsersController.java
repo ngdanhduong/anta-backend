@@ -105,25 +105,7 @@ public class AuthUsersController {
 
     @PostMapping({"/public/auth/register", "/auth/register"})
     public ResponseEntity<Map<String, Object>> register(@RequestBody(required = false) Map<String, Object> req) {
-        if (req == null) {
-            return AntaStore.error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Thiếu thông tin đăng ký");
-        }
-        String identifier = Objects.toString(req.get("identifier"), "").trim();
-        String displayName = Objects.toString(req.get("displayName"), "Thành Viên Mới").trim();
-        String password = Objects.toString(req.get("password"), "");
-        String vToken = Objects.toString(req.get("verificationToken"), "");
-        if (identifier.isEmpty() || password.length() < 6) {
-            return AntaStore.error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Email/SĐT không hợp lệ hoặc mật khẩu quá ngắn");
-        }
-        if (store.findUserByIdentifier(identifier) != null) {
-            return AntaStore.error(HttpStatus.CONFLICT, "CONFLICT", "Tài khoản này đã được đăng ký");
-        }
-        if (!store.consumeVerificationToken(vToken)) {
-            return AntaStore.error(HttpStatus.BAD_REQUEST, "INVALID_VERIFICATION_TOKEN", "Mã xác thực không hợp lệ");
-        }
-        AntaStore.UserRecord user = store.createUser("user-" + UUID.randomUUID().toString().substring(0, 8), identifier, displayName, password, true);
-        store.recordAudit(user.id(), "user.register", "user", user.id(), Map.of("identifier", identifier));
-        return ResponseEntity.ok(Map.of("data", store.issueTokenBundle(user)));
+        return AntaStore.error(HttpStatus.FORBIDDEN, "REGISTRATION_DISABLED", "Ứng dụng hiện chỉ hỗ trợ đăng nhập bằng Google");
     }
 
     @PostMapping({"/public/auth/login", "/auth/login"})
@@ -154,10 +136,15 @@ public class AuthUsersController {
     @PostMapping({"/public/auth/social", "/auth/social"})
     public ResponseEntity<Map<String, Object>> socialLogin(@RequestBody(required = false) Map<String, Object> req) {
         String idToken = req != null ? Objects.toString(req.get("idToken"), "").trim() : "";
+        String expectedAud = System.getenv("GOOGLE_CLIENT_ID");
         String email = "google_user@anta.vn";
         String name = "VĐV Anta Sports";
 
-        if (!idToken.isEmpty()) {
+        if (idToken.isEmpty()) {
+            if (expectedAud != null && !expectedAud.isBlank()) {
+                return AntaStore.error(HttpStatus.UNAUTHORIZED, "INVALID_SOCIAL_TOKEN", "Thiếu mã xác thực Google");
+            }
+        } else {
             try {
                 String url = "https://oauth2.googleapis.com/tokeninfo?id_token=" + URLEncoder.encode(idToken, StandardCharsets.UTF_8);
                 HttpRequest request = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(10)).GET().build();
@@ -166,9 +153,18 @@ public class AuthUsersController {
                     return AntaStore.error(HttpStatus.UNAUTHORIZED, "INVALID_SOCIAL_TOKEN", "Google chưa xác nhận được tài khoản");
                 }
                 Map<String, Object> claims = mapper.readValue(response.body(), new TypeReference<>() {});
-                String expectedAud = System.getenv("GOOGLE_CLIENT_ID");
-                if (expectedAud != null && !expectedAud.isBlank() && !expectedAud.trim().equals(claims.get("aud"))) {
-                    return AntaStore.error(HttpStatus.UNAUTHORIZED, "INVALID_SOCIAL_TOKEN", "Token Google không khớp ứng dụng");
+                if (expectedAud != null && !expectedAud.isBlank()) {
+                    String aud = Objects.toString(claims.get("aud"), "").trim();
+                    boolean audMatched = Arrays.stream(expectedAud.split(","))
+                            .map(String::trim)
+                            .filter(s -> !s.isEmpty())
+                            .anyMatch(s -> s.equals(aud));
+                    if (!audMatched) {
+                        return AntaStore.error(HttpStatus.UNAUTHORIZED, "INVALID_SOCIAL_TOKEN", "Token Google không khớp ứng dụng");
+                    }
+                }
+                if ("false".equalsIgnoreCase(Objects.toString(claims.get("email_verified"), "true"))) {
+                    return AntaStore.error(HttpStatus.UNAUTHORIZED, "UNSUPPORTED_SOCIAL_IDENTITY", "Tài khoản Google này chưa xác minh email");
                 }
                 email = Objects.toString(claims.get("email"), email).trim();
                 name = Objects.toString(claims.get("name"), email).trim();
