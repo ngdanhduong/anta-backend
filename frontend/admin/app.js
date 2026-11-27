@@ -61,7 +61,10 @@ async function call(path, method = 'GET', body, retried = false) {
   return payload.data;
 }
 function notify(message, bad = false) {
-  const box = $('notice'); box.textContent = message; box.className = 'notice' + (bad ? ' bad' : ''); box.hidden = !message;
+  const box = $('notice');
+  if (message && window.AntaMotion) window.AntaMotion.toast(message, bad);
+  if (!message || !bad) { box.textContent = ''; box.hidden = true; return; }
+  box.textContent = message; box.className = 'notice bad'; box.hidden = false;
 }
 const money = value => Number(value || 0).toLocaleString('vi-VN') + ' ₫';
 const time = value => value ? new Date(value).toLocaleString('vi-VN') : '—';
@@ -104,23 +107,30 @@ function filter(label, options, onChange) {
   return el('label', {}, [el('span', { text: label }), select]);
 }
 async function act(button, work, done) {
-  button.disabled = true;
-  try { await work(); notify(done); await show(current); } catch (error) { notify(error.message, true); button.disabled = false; }
+  const run = window.AntaMotion ? () => window.AntaMotion.runButtonAction(button, work) : async () => { button.disabled = true; try { return await work(); } finally { button.disabled = false; } };
+  try { await run(); notify(done); await show(current); } catch (error) { notify(error.message, true); }
 }
 function modal(title, bodyNodes, { confirmText = 'Xác nhận', onConfirm, danger = false } = {}) {
   const backdrop = el('div', { class: 'modal-backdrop' });
-  const close = () => backdrop.remove();
+  const close = () => {
+    document.removeEventListener('keydown', onKey);
+    if (window.AntaMotion) window.AntaMotion.closeModal(backdrop); else backdrop.remove();
+  };
+  const onKey = e => { if (e.key === 'Escape') close(); };
   const error = el('p', { class: 'error' });
   const confirmBtn = el('button', { class: danger ? 'danger' : '', text: confirmText });
   confirmBtn.addEventListener('click', async () => {
     error.textContent = '';
-    try { confirmBtn.disabled = true; await onConfirm(); close(); }
-    catch (e) { error.textContent = e.message; }
-    finally { confirmBtn.disabled = false; }
+    try {
+      const work = window.AntaMotion ? () => window.AntaMotion.runButtonAction(confirmBtn, onConfirm) : async () => { confirmBtn.disabled = true; try { await onConfirm(); } finally { confirmBtn.disabled = false; } };
+      await work();
+      close();
+    } catch (e) { error.textContent = e.message; }
   });
   backdrop.append(el('div', { class: 'modal' }, [el('h3', { text: title }), ...bodyNodes, error,
     el('div', { class: 'actions' }, [el('button', { class: 'ghost', text: 'Hủy', on: { click: close } }), confirmBtn])]));
   backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+  document.addEventListener('keydown', onKey);
   document.body.append(backdrop);
   return { close };
 }
@@ -359,12 +369,13 @@ async function show(name, state) {
   $('page-title').textContent = meta.title;
   $('page-sub').textContent = meta.sub;
   const view = $('view'), toolbar = $('toolbar');
-  view.replaceChildren(el('div', { class: 'card' }, el('p', { class: 'muted', style: 'margin:0', text: 'Đang tải dữ liệu…' })));
+  view.replaceChildren(window.AntaMotion ? window.AntaMotion.skeletonNode() : el('div', { class: 'card' }, el('p', { class: 'muted', style: 'margin:0', text: 'Đang tải dữ liệu…' })));
   toolbar.replaceChildren();
   try {
     const fresh = document.createDocumentFragment();
     await views[name](fresh, toolbar, currentState);
     view.replaceChildren(fresh);
+    if (window.AntaMotion) window.AntaMotion.animateIn(view);
   } catch (error) { view.replaceChildren(); notify(error.message, true); }
 }
 

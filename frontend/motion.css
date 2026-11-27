@@ -1,0 +1,346 @@
+/* Motion primitives adapted from Lucian UX/UI Prompt · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/ */
+:root {
+  --ux-ease: cubic-bezier(.2, .8, .2, 1);
+  --ux-spring: cubic-bezier(.34, 1.45, .64, 1);
+  --ux-pop: cubic-bezier(.34, 1.7, .5, 1);
+  --ux-mint: #119C72;
+  --ux-shadow: rgba(15, 37, 51, .14);
+  --ux-shadow-strong: rgba(15, 37, 51, .28);
+}
+
+/* ---- Tactile Spring Buttons (adapted from 438-loading-button) ---- */
+button {
+  position: relative;
+  overflow: hidden;
+  transform: scale(var(--ux-k, 1));
+  transition:
+    transform .46s var(--ux-pop),
+    box-shadow .24s var(--ux-ease),
+    background-color .24s var(--ux-ease),
+    border-color .2s var(--ux-ease),
+    color .2s var(--ux-ease),
+    opacity .2s var(--ux-ease);
+}
+button:hover:not(:disabled) {
+  --ux-k: 1.018;
+}
+button.is-down:not(:disabled),
+button:active:not(:disabled) {
+  --ux-k: .945;
+  transition:
+    transform .11s var(--ux-ease),
+    box-shadow .14s var(--ux-ease),
+    background-color .2s var(--ux-ease);
+}
+button.pw-toggle:hover:not(:disabled) {
+  transform: translateY(-50%) scale(1.03);
+}
+button.pw-toggle.is-down:not(:disabled),
+button.pw-toggle:active:not(:disabled) {
+  transform: translateY(-50%) scale(.94);
+}
+button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 25%, rgba(255, 255, 255, .24) 50%, transparent 75%);
+  transform: translateX(-120%);
+  transition: transform .55s var(--ux-ease);
+  pointer-events: none;
+}
+button:not(.ghost):not(.danger):not(.pw-toggle):hover:not(:disabled)::after {
+  transform: translateX(120%);
+}
+
+/* Morphing loading -> checkmark state on async buttons */
+button[data-motion] {
+  min-width: 72px;
+}
+button .ux-btn-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: opacity .2s var(--ux-ease), filter .2s var(--ux-ease), transform .28s var(--ux-ease);
+}
+button[data-motion="busy"] .ux-btn-label,
+button[data-motion="ok"] .ux-btn-label {
+  opacity: 0;
+  filter: blur(4px);
+  transform: scale(.9);
+}
+button .ux-btn-spin,
+button .ux-btn-check {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  opacity: 0;
+  transform: scale(.45);
+  pointer-events: none;
+  transition: opacity .2s var(--ux-ease), transform .38s var(--ux-pop);
+}
+button .ux-btn-spin {
+  border-radius: 50%;
+  border: 2.2px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-top-color: currentColor;
+  animation: ux-spin .7s linear infinite;
+}
+button[data-motion="busy"] .ux-btn-spin {
+  opacity: 1;
+  transform: scale(1);
+}
+button .ux-btn-check {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+button .ux-btn-check path {
+  stroke-dasharray: 22;
+  stroke-dashoffset: 22;
+  transition: stroke-dashoffset .34s var(--ux-ease) .08s;
+}
+button[data-motion="ok"] {
+  background: var(--ux-mint) !important;
+  color: #fff !important;
+  border-color: var(--ux-mint) !important;
+  box-shadow: 0 10px 22px -10px var(--ux-mint) !important;
+  animation: ux-btn-pop .44s var(--ux-pop);
+}
+button[data-motion="ok"] .ux-btn-check {
+  opacity: 1;
+  transform: scale(1);
+}
+button[data-motion="ok"] .ux-btn-check path {
+  stroke-dashoffset: 0;
+}
+@keyframes ux-spin { to { rotate: 360deg; } }
+@keyframes ux-btn-pop { 40% { transform: scale(1.07); } }
+
+/* ---- Sidebar & Tab Pills ---- */
+nav.side button {
+  transition:
+    background-color .2s var(--ux-ease),
+    color .2s var(--ux-ease),
+    transform .36s var(--ux-spring);
+}
+nav.side button:hover {
+  transform: translateX(3px);
+}
+nav.side button[aria-current="page"] {
+  box-shadow: inset 3px 0 0 var(--primary, var(--accent, #0A93A3));
+}
+.sport-tabs button {
+  transition:
+    background-color .24s var(--ux-ease),
+    color .2s var(--ux-ease),
+    transform .38s var(--ux-pop),
+    box-shadow .24s var(--ux-ease);
+}
+
+/* ---- Staggered View & Card Entrance ---- */
+@keyframes ux-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(.988);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.ux-anim-in {
+  animation: ux-enter .38s var(--ux-spring) backwards;
+  animation-delay: calc(var(--ux-i, 0) * 34ms);
+}
+.card, .stat, .sub-card, .table-wrap {
+  transition: transform .36s var(--ux-spring), box-shadow .28s var(--ux-ease), border-color .22s var(--ux-ease);
+}
+
+/* ---- Shimmer Skeleton Loading (adapted from 439-skeleton-cards) ---- */
+.ux-sk-wrap { display: grid; gap: 16px; }
+.ux-sk-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+.ux-sk-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius, 14px);
+  padding: 18px 20px;
+  display: grid;
+  gap: 10px;
+}
+.ux-sk-line {
+  display: block;
+  height: 12px;
+  border-radius: 7px;
+  background: var(--soft, #EEF5F7);
+  background-image: linear-gradient(100deg, transparent 25%, rgba(255, 255, 255, .72) 50%, transparent 75%);
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  animation: ux-shimmer 1.25s ease-in-out infinite;
+}
+@media (prefers-color-scheme: dark) {
+  .ux-sk-line {
+    background-image: linear-gradient(100deg, transparent 25%, rgba(255, 255, 255, .08) 50%, transparent 75%);
+  }
+}
+.ux-sk-line.lg { height: 24px; width: 46%; }
+.ux-sk-line.md { width: 78%; }
+.ux-sk-line.sm { width: 52%; }
+@keyframes ux-shimmer {
+  from { background-position: 130% 0; }
+  to { background-position: -30% 0; }
+}
+
+/* ---- Spring Modals (adapted from 436-confirm-modal) ---- */
+.modal-backdrop {
+  animation: ux-fade-in .22s var(--ux-ease);
+}
+.modal {
+  animation: ux-modal-in .42s var(--ux-spring);
+}
+.modal-backdrop.is-leaving {
+  opacity: 0;
+  transition: opacity .22s var(--ux-ease);
+}
+.modal-backdrop.is-leaving .modal {
+  transform: translateY(10px) scale(.93);
+  opacity: 0;
+  transition: transform .22s var(--ux-ease), opacity .2s var(--ux-ease);
+}
+@keyframes ux-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ux-modal-in {
+  from { opacity: 0; transform: translateY(16px) scale(.92); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ---- Stackable Spring Toast Notifications (adapted from 435-toast) ---- */
+.ux-toast-region {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  width: min(360px, calc(100vw - 32px));
+  z-index: 60;
+  pointer-events: none;
+}
+.ux-toast {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 10px 12px 14px;
+  border-radius: 15px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 38px -14px var(--ux-shadow-strong), 0 4px 12px -4px var(--ux-shadow);
+  transform-origin: 50% 100%;
+  transform: translate3d(0, var(--ux-y, 0px), 0) scale(var(--ux-s, 1));
+  opacity: var(--ux-o, 1);
+  transition: transform .54s cubic-bezier(.3, 1.42, .52, 1), opacity .26s var(--ux-ease);
+  pointer-events: auto;
+  overflow: hidden;
+}
+.ux-toast.is-pre {
+  opacity: 0;
+  transform: translate3d(0, 24px, 0) scale(.9);
+}
+.ux-toast.is-back > * {
+  opacity: .28;
+  transition: opacity .2s var(--ux-ease);
+}
+.ux-toast-ic {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: var(--ux-mint);
+  color: #fff;
+  animation: ux-btn-pop .44s var(--ux-pop) .05s both;
+}
+.ux-toast.is-bad .ux-toast-ic {
+  background: var(--danger, #D9383E);
+}
+.ux-toast-ic svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ux-toast-ic path {
+  stroke-dasharray: 20;
+  stroke-dashoffset: 20;
+  animation: ux-draw .36s var(--ux-ease) .16s forwards;
+}
+@keyframes ux-draw { to { stroke-dashoffset: 0; } }
+.ux-toast-msg {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+}
+.ux-toast-close {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+.ux-toast-close:hover:not(:disabled) {
+  background: var(--soft);
+  color: var(--text);
+  box-shadow: none;
+}
+.ux-toast-bar {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 0;
+  height: 2.5px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--ux-mint) 20%, transparent);
+  overflow: hidden;
+}
+.ux-toast.is-bad .ux-toast-bar {
+  background: color-mix(in srgb, var(--danger, #D9383E) 20%, transparent);
+}
+.ux-toast-bar i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--ux-mint);
+  transform-origin: 0 50%;
+  animation: ux-pb 4.2s linear forwards;
+}
+.ux-toast.is-bad .ux-toast-bar i {
+  background: var(--danger, #D9383E);
+}
+.ux-toast-region.is-paused .ux-toast-bar i {
+  animation-play-state: paused;
+}
+@keyframes ux-pb { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  button, button::after, nav.side button, .card, .stat, .sub-card, .modal, .modal-backdrop, .ux-toast, .ux-sk-line, .ux-anim-in {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+  .ux-toast-bar { display: none; }
+}

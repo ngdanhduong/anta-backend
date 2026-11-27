@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/motion.css?v=20261127-5">
   <style>
     :root {
       --teal: #12B5A6;
@@ -176,8 +177,20 @@
       color: inherit;
       display: flex;
       flex-direction: column;
-      transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
+      transform: translateY(0) scale(1);
+      transition: transform 0.44s var(--ux-spring, cubic-bezier(.34,1.45,.64,1)), border-color 0.22s ease, box-shadow 0.28s ease;
     }
+    .portal-card::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(280px circle at var(--mx, 50%) var(--my, 50%), rgba(18, 181, 166, 0.14), transparent 62%);
+      opacity: 0;
+      transition: opacity 0.3s var(--ux-ease, ease);
+      pointer-events: none;
+    }
+    .portal-card:hover::after { opacity: 1; }
+    .portal-card:active { transform: translateY(-1px) scale(0.985); transition-duration: 0.12s; }
     .portal-card::before {
       content: "";
       position: absolute;
@@ -357,6 +370,16 @@
   </footer>
   <script>
     document.getElementById('api-url').textContent = window.location.origin + '/api/v1';
+    document.querySelectorAll('.portal-card').forEach((card, i) => {
+      card.style.setProperty('--ux-i', String(i + 1));
+      card.classList.add('ux-anim-in');
+      card.addEventListener('pointermove', e => {
+        const r = card.getBoundingClientRect();
+        card.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+        card.style.setProperty('--my', (e.clientY - r.top) + 'px');
+      });
+    });
   </script>
+  <script src="/motion.js?v=20261127-5"></script>
 </body>
 </html>

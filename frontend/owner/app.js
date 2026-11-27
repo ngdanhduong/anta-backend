@@ -61,7 +61,10 @@ async function call(path, method = 'GET', body, retried = false) {
   return payload.data;
 }
 function notify(message, bad = false) {
-  const box = $('notice'); box.textContent = message; box.className = 'notice' + (bad ? ' bad' : ''); box.hidden = !message;
+  const box = $('notice');
+  if (message && window.AntaMotion) window.AntaMotion.toast(message, bad);
+  if (!message || !bad) { box.textContent = ''; box.hidden = true; return; }
+  box.textContent = message; box.className = 'notice bad'; box.hidden = false;
 }
 const money = v => v === null || v === undefined ? '—' : Number(v).toLocaleString('vi-VN') + ' đ';
 const time = v => v ? new Date(v).toLocaleString('vi-VN') : '—';
@@ -91,25 +94,31 @@ function table(columns, rows) {
   return el('div', { class: 'table-wrap' }, el('table', {}, [el('thead', {}, head), el('tbody', {}, body)]));
 }
 async function act(button, work, done) {
-  button.disabled = true;
-  try { const result = await work(); notify(done); return result; }
+  const run = window.AntaMotion ? () => window.AntaMotion.runButtonAction(button, work) : async () => { button.disabled = true; try { return await work(); } finally { button.disabled = false; } };
+  try { const result = await run(); notify(done); return result; }
   catch (error) { notify(error.message, true); throw error; }
-  finally { button.disabled = false; }
 }
 function modal(title, bodyNodes, { confirmText = 'Lưu', onConfirm, danger = false } = {}) {
   const backdrop = el('div', { class: 'modal-backdrop' });
-  const close = () => backdrop.remove();
+  const close = () => {
+    document.removeEventListener('keydown', onKey);
+    if (window.AntaMotion) window.AntaMotion.closeModal(backdrop); else backdrop.remove();
+  };
+  const onKey = e => { if (e.key === 'Escape') close(); };
   const error = el('p', { class: 'error' });
   const confirmBtn = el('button', { class: danger ? 'danger' : '', text: confirmText });
   confirmBtn.addEventListener('click', async () => {
     error.textContent = '';
-    try { confirmBtn.disabled = true; await onConfirm(); close(); }
-    catch (e) { error.textContent = e.message; }
-    finally { confirmBtn.disabled = false; }
+    try {
+      const work = window.AntaMotion ? () => window.AntaMotion.runButtonAction(confirmBtn, onConfirm) : async () => { confirmBtn.disabled = true; try { await onConfirm(); } finally { confirmBtn.disabled = false; } };
+      await work();
+      close();
+    } catch (e) { error.textContent = e.message; }
   });
   backdrop.append(el('div', { class: 'modal' }, [el('h3', { text: title }), ...bodyNodes, error,
     el('div', { class: 'actions' }, [el('button', { class: 'ghost', text: 'Hủy', on: { click: close } }), confirmBtn])]));
   backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+  document.addEventListener('keydown', onKey);
   document.body.append(backdrop);
   return { close };
 }
@@ -146,13 +155,15 @@ function renderNav() {
 }
 async function go(view, extra) {
   current = view; renderNav();
-  const container = $('view'); container.replaceChildren(el('div', { class: 'card' }, el('p', { class: 'muted', style: 'margin:0', text: 'Đang tải dữ liệu…' })));
+  const container = $('view');
+  container.replaceChildren(window.AntaMotion ? window.AntaMotion.skeletonNode() : el('div', { class: 'card' }, el('p', { class: 'muted', style: 'margin:0', text: 'Đang tải dữ liệu…' })));
   if (!IMPLEMENTED.has(view) && view !== 'detail') {
     container.replaceChildren(el('div', { class: 'card' }, [
       el('h3', { text: 'Phân hệ đang phát triển' }),
       el('p', { class: 'muted', style: 'margin:0',
         text: 'Màn hình này chưa thuộc phạm vi triển khai giai đoạn đầu (hiện hỗ trợ Lịch sân, Đơn đặt, Sân và giá, và Đăng ký cơ sở mới chờ Admin duyệt).' })
     ]));
+    if (window.AntaMotion) window.AntaMotion.animateIn(container);
     return;
   }
   if ((view === 'schedule' || view === 'bookings' || view === 'courts' || view === 'detail') && !currentBranch) {
@@ -161,6 +172,7 @@ async function go(view, extra) {
       el('p', { class: 'muted', text: 'Bạn có thể gửi hồ sơ đăng ký cơ sở mới ngay bây giờ. Sau khi Admin phê duyệt, cơ sở sẽ xuất hiện ở thanh chọn bên trái.' }),
       el('button', { text: '＋ Đăng ký cơ sở mới ngay', on: { click: () => go('submit-branch') } })
     ]));
+    if (window.AntaMotion) window.AntaMotion.animateIn(container);
     return;
   }
   try {
@@ -169,6 +181,7 @@ async function go(view, extra) {
     else if (view === 'detail') await renderDetail(container, extra);
     else if (view === 'courts') await renderCourts(container);
     else if (view === 'submit-branch') await renderSubmitBranch(container);
+    if (window.AntaMotion) window.AntaMotion.animateIn(container);
   } catch (error) { container.replaceChildren(); notify(error.message, true); }
 }
 async function refreshStats() {
